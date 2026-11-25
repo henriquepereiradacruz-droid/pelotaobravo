@@ -309,12 +309,15 @@ function render(){
   R.turnos.forEach(T => {
     h += `<h3>${T.t.nome} · ${hm(T.t.a)} – ${hm(T.t.b)}</h3>`;
     if (!T.postos.length) { h += `<p class="mut">Sem postos abertos.</p>`; return; }
-    h += `<table class="tbl"><tr><th>Horário</th>${T.postos.map(p=>`<th>${esc(p)}</th>`).join('')}</tr>`;
-    T.slots.forEach((s, i) => {
-      h += `<tr><td class="h">${i+1}º · ${hm(s.ini)}–${hm(s.fim)}</td>${s.linha.map(n => `<td>${nmBtn(n)}</td>`).join('')}</tr>`;
-      if (i === 0) s.linha.forEach(n => { if (n && c.ae.has(n)) av.push(`${n} está de aula externa e ficou no 1º horário (${T.t.nome}).`); });
-    });
+    if (T.slots.length < T.postos.length) { // menos horários que postos: postos nas linhas (mais vertical)
+      h += `<table class="tbl"><tr><th>Posto</th>${T.slots.map((s, i) => `<td class="h">${i+1}º · ${hm(s.ini)}–${hm(s.fim)}</td>`).join('')}</tr>`;
+      T.postos.forEach((p, r) => h += `<tr><th>${esc(p)}</th>${T.slots.map(s => `<td>${nmBtn(s.linha[r])}</td>`).join('')}</tr>`);
+    } else {
+      h += `<table class="tbl"><tr><th>Horário</th>${T.postos.map(p=>`<th>${esc(p)}</th>`).join('')}</tr>`;
+      T.slots.forEach((s, i) => h += `<tr><td class="h">${i+1}º · ${hm(s.ini)}–${hm(s.fim)}</td>${s.linha.map(n => `<td>${nmBtn(n)}</td>`).join('')}</tr>`);
+    }
     h += '</table>';
+    if (T.slots[0]) T.slots[0].linha.forEach(n => { if (n && c.ae.has(n)) av.push(`${n} está de aula externa e ficou no 1º horário (${T.t.nome}).`); });
     if (T.fora.length) h += `<p class="mut">Sem posto neste turno: ${T.fora.map(nmBtn).join(' ')}</p>`;
     if (T.falta) av.push(`${T.t.nome}: faltam ${T.falta} militar(es) para cobrir os postos com no máximo 2h. Feche um posto neste turno.`);
   });
