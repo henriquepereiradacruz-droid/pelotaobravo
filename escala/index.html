@@ -190,6 +190,9 @@ function lerNomes(txt){
 const GRADS = ['Sub Ten','Subten','St','1º Sgt','2º Sgt','3º Sgt','Sgt','Cb','Sd','Al Sd','Cad','Asp','Al Of','Al','1º Ten','2º Ten','Ten','Cap','Maj'];
 function achaGrad(l){
   const t = l.replace(/\*/g, '');
+  if (/aluno\s+soldado/i.test(t)) return 'Al Sd';
+  if (/aluno\s+oficial/i.test(t)) return 'Al Of';
+  if (/\bcad(ete)?\b\.?/i.test(t)) return 'Cad';
   for (const g of GRADS.slice().sort((a,b) => b.length - a.length)) {
     const re = new RegExp('(^|\\s)' + g.replace(/[º ]/g, m => m === ' ' ? '\\s*' : '[º°o]?') + '(\\.|\\s|$)', 'i');
     if (re.test(t)) return g;
@@ -522,7 +525,8 @@ function carregarPdfJs(){
 async function importarPdf(arq){
   const btn = $('btnPdf'), txt0 = btn.textContent; btn.textContent = 'Lendo PDF…'; btn.disabled = true;
   try {
-    const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise, nomes = [];
+    const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise;
+    const out = {CFP: [], CFO: []}, cmt = [], semCurso = []; let data = '';
     for (let pg = 1; pg <= doc.numPages; pg++) {
       const page = await doc.getPage(pg); await page.getOperatorList(); // carrega as fontes
       const tc = await page.getTextContent(), linhas = {};
@@ -530,22 +534,63 @@ async function importarPdf(arq){
       tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3;
         (linhas[y] = linhas[y] || []).push({x: it.transform[4], s: it.str, b: negrito(it.fontName)}); });
       Object.keys(linhas).map(Number).sort((a,b) => b - a).forEach(y => {
-        const its = linhas[y].sort((a,b) => a.x - b.x), tudo = its.map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
-        const ng = its.filter(i => i.b).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
-        if (!ng || ng === tudo) return; // sem negrito, ou linha inteira em negrito (título)
-        nomes.push(((achaGrad(tudo) || cur().grad) + ' ' + ng.toUpperCase()).trim());
+        const its = linhas[y].sort((a,b) => a.x - b.x), junta = a => a.map(i => i.s).join(' ').replace(/\s+/g, ' ').trim(), tudo = junta(its);
+        if (!data) data = lerData(tudo);
+        // coluna GRAD: o negrito à direita dela é o nome de guerra; à esquerda fica a função
+        const iG = its.findIndex(i => achaGrad(i.s));
+        let ng, funcao = '', grad;
+        if (iG >= 0) { grad = achaGrad(its[iG].s); ng = junta(its.slice(iG + 1).filter(i => i.b)); funcao = junta(its.slice(0, iG)); }
+        else { ng = junta(its.filter(i => i.b)); grad = achaGrad(tudo); if (ng === tudo) return; }
+        if (!ng || /sobreaviso/i.test(funcao)) return;
+        const curso = grad === 'Cad' || grad === 'Al Of' ? 'CFO' : grad ? 'CFP' : '';
+        const nome = ((grad || cur().grad) + ' ' + ng.toUpperCase()).trim();
+        const alvo = out[curso || S.curso];
+        if (!alvo.includes(nome)) alvo.push(nome);
+        if (/cmt|comandante/i.test(funcao)) cmt.push(nome);
+        if (!curso) semCurso.push(nome);
       });
     }
-    if (!nomes.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
-    $('nomes').value = nomes.join('\n'); cur().nomes = $('nomes').value; atualizar(true);
+    if (!out.CFP.length && !out.CFO.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
+    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: []});
+    alert(`Importados: ${out.CFP.length} do CFP e ${out.CFO.length} do CFO (Sobreaviso fica de fora). Confira as listas nas abas CFP e CFO.`);
   } catch(e) { alert('Não consegui ler o PDF: ' + e.message); }
   finally { btn.textContent = txt0; btn.disabled = false; $('arqPdf').value = ''; }
+}
+const MESES = {jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12};
+function lerData(t){
+  const m = t.match(/data:?\s*(\d{1,2})\s*(?:de\s+)?([a-zç]{3})[a-zç]*\.?\s*(?:de\s+)?(\d{2,4})/i)
+         || t.match(/data:?\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+  if (!m) return '';
+  const mes = isNaN(m[2]) ? MESES[m[2].toLowerCase()] : +m[2]; if (!mes) return '';
+  const ano = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+  return `${ano}-${String(mes).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+}
+// Preenche o app (usado pelo PDF e pelo link pronto gerado pelo Claude)
+function preencher(o){
+  if (o.data) { $('data').value = o.data; tipoPelaData(); }
+  for (const k of ['CFP','CFO']) if (o[k] && o[k].length) {
+    const c = S.C[k]; c.nomes = o[k].join('\n'); c.plano = null;
+    c.cmt = new Set((o.cmt || []).filter(n => o[k].includes(n)));
+    (o.fem || []).filter(n => o[k].includes(n)).forEach(n => c.fem.add(n));
+  }
+  const k = o.CFP && o.CFP.length ? 'CFP' : 'CFO';
+  S.curso = k; $('tab-CFP').classList.toggle('on', k==='CFP'); $('tab-CFO').classList.toggle('on', k==='CFO');
+  $('nomes').value = cur().nomes; atualizar(true);
+}
+// Link pronto: #d=AAAA-MM-DD&cfp=Nome;Nome&cfo=...&cmt=...&fem=...
+function lerLink(){
+  if (!location.hash || location.hash.length < 3) return false;
+  const p = new URLSearchParams(location.hash.slice(1)), L = k => (p.get(k) || '').split(';').map(s => s.trim()).filter(Boolean);
+  if (!p.get('cfp') && !p.get('cfo')) return false;
+  preencher({data: p.get('d') || '', CFP: L('cfp'), CFO: L('cfo'), cmt: L('cmt'), fem: L('fem')});
+  history.replaceState(null, '', location.pathname);
+  return true;
 }
 
 // ---------- Início ----------
 (function(){
   const hoje = new Date(); $('data').value = new Date(hoje - hoje.getTimezoneOffset()*6e4).toISOString().slice(0,10);
-  tipoPelaData(); lerPref(); atualizar(true);
+  tipoPelaData(); lerPref(); if (!lerLink()) atualizar(true);
 })();
 </script>
 </body>
