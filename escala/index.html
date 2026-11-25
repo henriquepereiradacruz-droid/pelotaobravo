@@ -76,7 +76,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha"></textarea>
-  <p class="mut">Marque quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
+  <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
   <div id="pessoas" class="pessoas"></div>
 </div>
 
@@ -143,7 +143,7 @@ const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-fe
 
 // ---------- Estado ----------
 function novoCurso(c){
-  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), postos:POSTOS[c].slice(), cfpServ:true,
+  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), postos:POSTOS[c].slice(), cfpServ:true,
           gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, opc:0, plano:null, faxina:FAXINA[c].join('\n')};
 }
 const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null};
@@ -221,7 +221,8 @@ function montar(op, nomes, ae, fixG, g, gGuar){
   g = op.g;
   // guarita/café: escolhidos manualmente primeiro; quem tem aula externa é bom candidato (não pega 1º horário)
   const G = pess.filter(n => fixG.has(n)).slice(0, g);
-  const cand = pess.filter(n => !G.includes(n)).sort((u,v) => (op.b ? 0 : ae.has(v) - ae.has(u)));
+  const fem = cur().fem; // femininas ficam livres para a faxina dos banheiros femininos
+  const cand = pess.filter(n => !G.includes(n)).sort((u,v) => (fem.has(u) - fem.has(v)) || (op.b ? 0 : ae.has(v) - ae.has(u)));
   while (G.length < g && cand.length) G.push(cand.shift());
   // b de guarita/café na madrugada (1º horário, então sem aula externa); a-b só no dia; o resto sem posto
   const Gs = G.slice().sort((u,v) => ae.has(u) - ae.has(v));
@@ -301,16 +302,26 @@ function faxina(pl, horas){
   const fila = [...pl.reserva, ...pl.pos.flat().filter(n=>!ext.has(n)).sort((a,b)=>(horas[a]||0)-(horas[b]||0))];
   if (!fila.length) return locais.map(local => ({local, quem: []}));
   // Banheiro é o mais pesado: quem pega banheiro fica só com ele (se houver gente suficiente).
-  const ehBanh = l => /banheiro/i.test(l);
-  const banh = locais.filter(ehBanh), outros = locais.filter(l => !ehBanh(l));
+  // Banheiro feminino: de preferência militares femininas; masculino: de preferência masculinos.
+  const fem = cur().fem, ehBanh = l => /banheiro/i.test(l);
+  const gen = l => /femin/i.test(l) ? 'F' : /mascul/i.test(l) ? 'M' : '';
+  const banh = locais.filter(ehBanh).sort((u,v) => (gen(u) ? 0 : 1) - (gen(v) ? 0 : 1)), outros = locais.filter(l => !ehBanh(l));
   const reserva = outros.length && fila.length > 1 ? 1 : 0;
   const nB = Math.min(banh.length * q, fila.length - reserva);
-  const pB = fila.slice(0, nB), pO = fila.slice(nB).length ? fila.slice(nB) : fila;
   const res = {}; locais.forEach(l => res[l] = []);
-  const distribuir = (lista, pessoas) => { let i = 0;
-    lista.forEach(l => { for (let k = 0; k < q; k++) { const n = pessoas[(i++) % pessoas.length]; if (!res[l].includes(n)) res[l].push(n); } }); };
-  if (pB.length) distribuir(banh, pB);
-  distribuir(outros, pO);
+  const carga = {}, livres = fila.slice(), pB = [];
+  const pref = (l, lista) => { const g = gen(l); if (!g) return lista;
+    const ok = n => (g === 'F') === fem.has(n); return [...lista.filter(ok), ...lista.filter(n => !ok(n))]; };
+  const sobra = [];
+  banh.forEach(l => { for (let k = 0; k < q; k++) {
+    if (pB.length < nB) { const n = pref(l, livres)[0]; livres.splice(livres.indexOf(n), 1); pB.push(n); res[l].push(n); carga[n] = 1; }
+    else sobra.push(l);
+  } });
+  // banheiros que sobraram: para quem já está em banheiro, do mesmo gênero e com menos carga
+  sobra.forEach(l => { const c2 = pref(l, pB.filter(n => !res[l].includes(n)).sort((u,v) => carga[u] - carga[v]));
+    if (c2.length) { res[l].push(c2[0]); carga[c2[0]]++; } });
+  const pO = livres.length ? livres : fila; let i = 0;
+  outros.forEach(l => { for (let k = 0; k < q; k++) { const n = pO[(i++) % pO.length]; if (!res[l].includes(n)) res[l].push(n); } });
   return locais.map(local => ({local, quem: res[local]}));
 }
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
@@ -327,6 +338,7 @@ function atualizar(regerar){
   // pessoas
   $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"><span>${esc(n)}</span>
     ${S.curso === 'CFO' ? `<button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>` : ''}
+    <button class="tag${c.fem.has(n)?' on':''}" data-fem="${encodeURIComponent(n)}" title="Feminino">Fem.</button>
     ${c.cmt.has(n) ? '' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>`}
     ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita/Café</button>`}</div>`).join('');
   // postos
@@ -364,6 +376,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
   const c = cur();
   if (t.dataset.ae) { const n = decodeURIComponent(t.dataset.ae); c.ae.has(n) ? c.ae.delete(n) : c.ae.add(n); atualizar(true); }
+  else if (t.dataset.fem) { const n = decodeURIComponent(t.dataset.fem); c.fem.has(n) ? c.fem.delete(n) : c.fem.add(n); atualizar(true); }
   else if (t.dataset.cmt) { const n = decodeURIComponent(t.dataset.cmt); c.cmt.has(n) ? c.cmt.delete(n) : c.cmt.add(n); atualizar(true); }
   else if (t.dataset.g) { const n = decodeURIComponent(t.dataset.g); c.fixG.has(n) ? c.fixG.delete(n) : c.fixG.add(n); atualizar(true); }
   else if (t.dataset.o) { c.opc = +t.dataset.o; atualizar(true); }
