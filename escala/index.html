@@ -76,7 +76,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha"></textarea>
-  <p class="mut">Marque quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
+  <p class="mut">Marque o <b>comandante</b> (não tira hora nem faxina), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
   <div id="pessoas" class="pessoas"></div>
 </div>
 
@@ -143,7 +143,7 @@ const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-fe
 
 // ---------- Estado ----------
 function novoCurso(c){
-  return {nomes:'', ae:new Set(), fixG:new Set(), postos:POSTOS[c].slice(), cfpServ:true,
+  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), postos:POSTOS[c].slice(), cfpServ:true,
           gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, opc:0, plano:null, faxina:FAXINA[c].join('\n')};
 }
 const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null};
@@ -269,6 +269,7 @@ function render(){
     for (let i=0;i<L;i++) h += `<tr><td>${nmBtn(pl.guarita[i])}</td><td>${nmBtn(pl.cafe[i])}</td></tr>`;
     h += '</table>';
   }
+  if (pl.cmt && pl.cmt.length) h = `<p><b>Comandante:</b> ${pl.cmt.map(esc).join(', ')}</p>` + h;
   const fax = faxina(pl, horas);
   if (fax.length) h += `<table class="tbl"><tr><th>Faxina</th><th>Militar(es)</th></tr>${fax.map(f=>`<tr><td>${esc(f.local)}</td><td>${f.quem.map(nmBtn).join('')}</td></tr>`).join('')}</table>`;
   if (pl.reserva.length) h += `<p class="mut">Fora dos postos: ${pl.reserva.map(nmBtn).join(' ')}</p>`;
@@ -310,12 +311,13 @@ function trocar(a, b){
 
 // ---------- Interface ----------
 function atualizar(regerar){
-  const c = cur(), nomes = lerNomes(c.nomes);
-  $('qtd').textContent = nomes.length;
+  const c = cur(), todos = lerNomes(c.nomes), nomes = todos.filter(n => !c.cmt.has(n));
+  $('qtd').textContent = todos.length + (todos.length !== nomes.length ? ` · ${nomes.length} na escala` : '');
   // pessoas
-  $('pessoas').innerHTML = nomes.map(n => `<div class="pessoa"><span>${esc(n)}</span>
-    <button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>
-    <button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita/Café</button></div>`).join('');
+  $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"><span>${esc(n)}</span>
+    <button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>
+    ${c.cmt.has(n) ? '' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>`}
+    ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita/Café</button>`}</div>`).join('');
   // postos
   $('postos').innerHTML = POSTOS[S.curso].map(p => `<label class="chk"><input type="checkbox" data-p="${esc(p)}" ${c.postos.includes(p)?'checked':''}> ${esc(p)}</label>`).join('');
   $('cfpServ').innerHTML = S.curso === 'CFO' ? `<label class="chk"><input type="checkbox" id="cfpS" ${c.cfpServ?'checked':''}> CFP também de serviço hoje (Alpendre fica com o CFP)</label>` : '';
@@ -331,7 +333,8 @@ function atualizar(regerar){
   if (c.opc >= ops.length) c.opc = 0;
   $('opcoes').innerHTML = ops.map((o,i) => { const d = descOpcao(o, g);
     return `<button class="opc${i===c.opc?' on':''}" data-o="${i}"><b>${i===0?'⭐ ':''}${d.t}</b><small>${d.s}</small>${d.extra?`<small>${esc(d.extra)}</small>`:''}</button>`; }).join('');
-  if (regerar || !c.plano) c.plano = montar(ops[c.opc], nomes, c.ae, c.fixG, g, c.gGuar);
+  if (regerar || !c.plano) c.plano = montar(ops[c.opc], nomes, c.ae, new Set([...c.fixG].filter(n => !c.cmt.has(n))), g, c.gGuar);
+  c.plano.cmt = todos.filter(n => c.cmt.has(n));
   render();
 }
 function trocarCurso(k){
@@ -350,6 +353,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
   const c = cur();
   if (t.dataset.ae) { const n = decodeURIComponent(t.dataset.ae); c.ae.has(n) ? c.ae.delete(n) : c.ae.add(n); atualizar(true); }
+  else if (t.dataset.cmt) { const n = decodeURIComponent(t.dataset.cmt); c.cmt.has(n) ? c.cmt.delete(n) : c.cmt.add(n); atualizar(true); }
   else if (t.dataset.g) { const n = decodeURIComponent(t.dataset.g); c.fixG.has(n) ? c.fixG.delete(n) : c.fixG.add(n); atualizar(true); }
   else if (t.dataset.o) { c.opc = +t.dataset.o; atualizar(true); }
   else if (t.dataset.n) {
@@ -395,7 +399,7 @@ function gerarImagem(){
   x.fillStyle = '#ffffff'; x.font = 'bold 46px system-ui,sans-serif'; x.fillText('ESCALA DE POSTOS · ' + S.curso, pad, 72);
   const d = $('data').value ? new Date($('data').value+'T12:00') : null;
   x.font = '30px system-ui,sans-serif';
-  x.fillText(d ? `${d.toLocaleDateString('pt-BR')} · ${DIAS[d.getDay()]}` : '', pad, 118);
+  x.fillText((d ? `${d.toLocaleDateString('pt-BR')} · ${DIAS[d.getDay()]}` : '') + (pl.cmt && pl.cmt.length ? `  ·  Cmt: ${pl.cmt.join(', ')}` : ''), pad, 118);
   let y = 180;
   const cell = (tx, cx, cy, w, bg, cor, bold) => {
     x.fillStyle = bg; x.fillRect(cx, cy, w, rowH); x.strokeStyle = '#d0d4d9'; x.lineWidth = 2; x.strokeRect(cx, cy, w, rowH);
