@@ -84,12 +84,19 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
   <div class="row" style="margin-bottom:8px">
-    <button id="btnPdf">📄 Importar PDF (nome de guerra em negrito)</button>
+    <button id="btnFoto">📷 Ler foto da escala</button>
+    <button id="btnPdf">📄 Importar PDF</button>
+    <input type="file" id="arqFoto" accept="image/*" hidden>
     <input type="file" id="arqPdf" accept="application/pdf" hidden>
   </div>
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha.&#10;Dica: *SILVA* ou **SILVA** marca o nome de guerra."></textarea>
   <div class="row"><div><label for="grad">Graduação padrão (quando a lista não traz)</label><input id="grad" style="width:100%;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit"></div></div>
   <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita</b>.</p>
+  <details style="margin:4px 0 8px"><summary>Efetivo: <span id="efN"></span></summary>
+    <p class="mut">Lista com nome completo e nome de guerra de todos os militares. Fica salva só neste celular e é usada para reconhecer os nomes da foto.</p>
+    <div class="row"><button id="btnEf">📂 Carregar arquivo do efetivo</button><button id="apagaEf">Apagar</button></div>
+    <input type="file" id="arqEf" accept=".json,application/json,text/plain" hidden>
+  </details>
   <div id="sobBox"></div>
   <div id="pessoas" class="pessoas"></div>
 </div>
@@ -185,6 +192,7 @@ function lerNomes(txt){
     if (!l) continue;
     const ng = l.match(/\*{1,2}([^*]+)\*{1,2}/);
     if (ng) l = (achaGrad(l) || cur().grad) + ' ' + ng[1].trim().toUpperCase();
+    else if (EFETIVO.length && l.split(/\s+/).length >= 3) { const e = acharMilitar(l); if (e) l = nomeEscala(e); }
     let n = l; if (vistos[l]) n = l + ' (' + (++vistos[l]) + ')'; else vistos[l] = 1;
     out.push(n);
   }
@@ -413,6 +421,9 @@ document.addEventListener('click', e => {
   else if (t.dataset.sh) compartilhar([+t.dataset.sh]);
   else if (t.id === 'shAll') compartilhar(S.imgs.map((_, i) => i));
   else if (t.id === 'btnPdf') $('arqPdf').click();
+  else if (t.id === 'btnFoto') $('arqFoto').click();
+  else if (t.id === 'btnEf') $('arqEf').click();
+  else if (t.id === 'apagaEf') { if (confirm('Apagar o efetivo salvo neste celular?')) { EFETIVO = []; _idx = null; salvarEfetivo(); mostrarEfetivo(); } }
   else if (t.dataset.n) {
     const n = d(t.dataset.n);
     if (!S.sel) S.sel = n; else if (S.sel === n) S.sel = null; else { trocar(S.sel, n); S.sel = null; }
@@ -437,6 +448,8 @@ document.addEventListener('change', e => {
     S.hor[tp] = S.hor[tp] || {}; S.hor[tp][ti] = {a, b}; salvarPref(); $('imgBox').innerHTML = ''; atualizar(false);
   }
   else if (t.id === 'arqPdf' && t.files[0]) importarPdf(t.files[0]);
+  else if (t.id === 'arqFoto' && t.files[0]) lerFoto(t.files[0]);
+  else if (t.id === 'arqEf' && t.files[0]) carregarEfetivo(t.files[0]);
   else if (t.id === 'rodar') render();
 });
 let tmr; $('nomes').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(() => { cur().nomes = $('nomes').value; atualizar(true); }, 300); });
@@ -551,7 +564,7 @@ async function importarPdf(arq){
   const btn = $('btnPdf'), txt0 = btn.textContent; btn.textContent = 'Lendo PDF…'; btn.disabled = true;
   try {
     const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise;
-    const out = {CFP: [], CFO: []}, cmt = [], semCurso = [], sob = [], plant = new Set(); let data = '';
+    const out = {CFP: [], CFO: []}, cmt = [], semCurso = [], sob = [], plant = new Set(), femPdf = []; let data = '';
     for (let pg = 1; pg <= doc.numPages; pg++) {
       const page = await doc.getPage(pg); await page.getOperatorList(); // carrega as fontes
       const tc = await page.getTextContent(), linhas = {};
@@ -568,7 +581,9 @@ async function importarPdf(arq){
         else { ng = junta(its.filter(i => i.b)); grad = achaGrad(tudo); if (ng === tudo) return; }
         if (!ng) return;
         const curso = grad === 'Cad' || grad === 'Al Of' ? 'CFO' : grad ? 'CFP' : '';
-        const nome = ((grad || cur().grad) + ' ' + ng.toUpperCase()).trim();
+        const ef = acharMilitar(tudo);
+        const nome = ef ? nomeEscala(ef) : ((grad || cur().grad) + ' ' + ng.toUpperCase()).trim();
+        if (ef && ef.f) femPdf.push(nome);
         const alvo = out[curso || S.curso];
         if (!alvo.includes(nome)) alvo.push(nome);
         if (/sobreaviso/i.test(funcao)) sob.push(nome); else plant.add(nome);
@@ -577,7 +592,7 @@ async function importarPdf(arq){
       });
     }
     if (!out.CFP.length && !out.CFO.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
-    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: [], sob: sob.filter(n => !plant.has(n))});
+    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: femPdf, sob: sob.filter(n => !plant.has(n))});
     alert(`Importados: ${out.CFP.length} do CFP e ${out.CFO.length} do CFO. Sobreavisos marcados (Sobr.) ficam fora até você ativar. Confira as listas nas abas CFP e CFO.`);
   } catch(e) { alert('Não consegui ler o PDF: ' + e.message); }
   finally { btn.textContent = txt0; btn.disabled = false; $('arqPdf').value = ''; }
@@ -614,10 +629,129 @@ function lerLink(){
   return true;
 }
 
+// ---------- Efetivo (fica salvo só neste celular) ----------
+// Formato: [{n:"Nome Completo", g:"Al Sd", ng:"NOME DE GUERRA", c:"CFP"|"CFO", f:true|false}]
+let EFETIVO = [];
+function lerEfetivo(){ try { EFETIVO = JSON.parse(localStorage.getItem('escala-efetivo') || '[]'); } catch(e) { EFETIVO = []; } }
+function salvarEfetivo(){ try { localStorage.setItem('escala-efetivo', JSON.stringify(EFETIVO)); } catch(e) { alert('Não consegui salvar o efetivo neste navegador.'); } }
+function mostrarEfetivo(){ $('efN').textContent = EFETIVO.length ? `${EFETIVO.length} militares salvos neste celular` : 'Nenhum efetivo carregado'; }
+async function carregarEfetivo(arq){
+  try {
+    const dados = JSON.parse(await arq.text());
+    const lista = (Array.isArray(dados) ? dados : dados.efetivo || []).filter(e => e && e.n && e.ng);
+    if (!lista.length) throw new Error('arquivo sem militares');
+    EFETIVO = lista; salvarEfetivo(); mostrarEfetivo(); _idx = null;
+    alert(`Efetivo carregado: ${lista.length} militares.`);
+  } catch(e) { alert('Arquivo de efetivo inválido: ' + e.message); }
+  $('arqEf').value = '';
+}
+const PEQ = new Set(['DE','DA','DO','DOS','DAS','E','D']);
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim();
+function lev(a, b){ if (Math.abs(a.length - b.length) > 2) return 9; const d = Array.from({length: a.length + 1}, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length]; }
+let _idx = null;
+function indice(){ if (!_idx) _idx = EFETIVO.map(e => ({e, t: norm(e.n).split(' ').filter(t => !PEQ.has(t) && t.length > 1)})); return _idx; }
+// acha no efetivo o militar cujo nome completo aparece na linha (tolera pequenos erros de leitura)
+function acharMilitar(linha){
+  if (!EFETIVO.length) return null;
+  const L = norm(linha).split(' ');
+  let melhor = null, nota = 0, segunda = 0;
+  for (const {e, t} of indice()) {
+    if (!t.length) continue;
+    let ok = 0; // palavra exata vale 1; com pequeno erro de leitura vale 0,8
+    for (const tk of t) ok += L.includes(tk) ? 1 : L.some(w => (tk.length >= 5 && lev(w, tk) <= 1) || (tk.length >= 8 && lev(w, tk) <= 2)) ? 0.8 : 0;
+    const s = ok / t.length + ok * 0.01; // empate: vence quem tem mais palavras batendo
+    if (s > nota) { segunda = nota; nota = s; melhor = e; } else if (s > segunda) segunda = s;
+  }
+  return nota >= 0.76 && nota - segunda > 0.05 ? melhor : null;
+}
+const nomeEscala = e => `${e.g} ${e.ng.toUpperCase()}`.trim();
+
+// ---------- Ler foto da escala ----------
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/';
+function carregarTesseract(){
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((ok, erro) => { const sc = document.createElement('script'); sc.src = TESS + 'tesseract.min.js';
+    sc.onload = () => ok(window.Tesseract); sc.onerror = () => erro(new Error('sem internet para baixar o leitor')); document.head.appendChild(sc); });
+}
+function abrirImagem(arq){ return new Promise((ok, erro) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => erro(new Error('imagem inválida')); im.src = URL.createObjectURL(arq); }); }
+// divide a foto nas linhas da tabela (pelas linhas horizontais escuras) para ler uma linha por vez
+function faixas(cv){
+  const x = cv.getContext('2d'), {width: W, height: H} = cv, px = x.getImageData(0, 0, W, H).data, borda = [];
+  for (let y = 0; y < H; y++) { let esc = 0; for (let i = 0; i < W; i += 2) { const k = (y * W + i) * 4; if (px[k] + px[k+1] + px[k+2] < 300) esc++; } borda.push(esc / (W / 2) > 0.35); }
+  const f = []; let ini = 0;
+  for (let y = 0; y <= H; y++) { if (y === H || borda[y]) { if (y - ini >= 18) f.push([ini, y]); ini = y + 1; } }
+  // faixas muito altas (títulos, áreas sem tabela) são quebradas para o leitor não se perder
+  return f.flatMap(([a, b]) => { const out = []; for (let s = a; s < b; s += 600) out.push([s, Math.min(b, s + 600)]); return out; });
+}
+// apaga linhas horizontais da tabela que sobraram na faixa (elas confundem o leitor)
+function apagarLinhas(c){
+  const x = c.getContext('2d'), {width: W, height: H} = c, img = x.getImageData(0, 0, W, H), px = img.data;
+  for (let y = 0; y < H; y++) { let run = 0, maior = 0; // linha da tabela = trecho escuro contínuo e longo
+    for (let i = 0; i < W; i++) { const k = (y * W + i) * 4; if (px[k] + px[k+1] + px[k+2] < 450) { run++; if (run > maior) maior = run; } else run = 0; }
+    if (maior / W > 0.25) for (let i = 0; i < W; i++) { const k = (y * W + i) * 4; px[k] = px[k+1] = px[k+2] = 255; } }
+  x.putImageData(img, 0, 0);
+}
+async function lerFoto(arq){
+  const btn = $('btnFoto'), txt0 = btn.textContent; btn.disabled = true; btn.textContent = 'Preparando…';
+  let worker;
+  try {
+    if (!EFETIVO.length && !confirm('Nenhum efetivo carregado: o app não vai saber o nome de guerra e vai trazer o nome completo. Continuar?')) return;
+    const im = await abrirImagem(arq), esc = Math.min(3, 2400 / im.width);
+    const cv = document.createElement('canvas'); cv.width = Math.round(im.width * esc); cv.height = Math.round(im.height * esc);
+    const x = cv.getContext('2d'); x.filter = 'grayscale(1) contrast(1.4)'; x.drawImage(im, 0, 0, cv.width, cv.height);
+    const T = await carregarTesseract();
+    worker = await T.createWorker('por', 1, {workerPath: TESS + 'worker.min.js', corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+      langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/por@1.0.0/4.0.0_best_int'});
+    await worker.setParameters({tessedit_pageseg_mode: '6'});
+    const fx = faixas(cv), linhas = [], pc = document.createElement('canvas'), pcx = pc.getContext('2d');
+    for (let i = 0; i < fx.length; i++) {
+      btn.textContent = `Lendo foto… ${Math.round(100 * i / fx.length)}%`;
+      const [a, b] = fx[i]; pc.width = cv.width; pc.height = b - a + 16;
+      pcx.fillStyle = '#fff'; pcx.fillRect(0, 0, pc.width, pc.height); pcx.drawImage(cv, 0, a, cv.width, b - a, 0, 8, cv.width, b - a);
+      let {data} = await worker.recognize(pc);
+      const achou = t => t.split('\n').some(l => acharMilitar(l) || achaGrad(l));
+      if (b - a < 200 && !achou(data.text)) { // linha não reconhecida: apaga as linhas da tabela e tenta como linha única
+        apagarLinhas(pc); await worker.setParameters({tessedit_pageseg_mode: '7'});
+        const r2 = (await worker.recognize(pc)).data; await worker.setParameters({tessedit_pageseg_mode: '6'});
+        if (achou(r2.text)) data = r2;
+      }
+      data.text.split('\n').map(s => s.trim()).filter(Boolean).forEach(s => linhas.push(s));
+    }
+    interpretarLinhas(linhas);
+  } catch(e) { alert('Não consegui ler a foto: ' + e.message); }
+  finally { if (worker) worker.terminate(); btn.textContent = txt0; btn.disabled = false; $('arqFoto').value = ''; }
+}
+function interpretarLinhas(linhas){
+  const out = {CFP: [], CFO: []}, cmt = [], sob = [], fem = [], plant = new Set(), naoAchou = []; let data = '';
+  linhas.forEach(l => {
+    if (!data) data = lerData(l);
+    const grad = achaGrad(l), e = acharMilitar(l);
+    if (!e && !grad) return;
+    let nome, curso;
+    if (e) { nome = nomeEscala(e); curso = e.c || (e.g === 'Cad' ? 'CFO' : 'CFP'); if (e.f) fem.push(nome); }
+    else {
+      const resto = l.replace(/.*?\bBM\b/i, '').replace(/[|\][!]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!resto || resto.split(' ').length < 2) return;
+      nome = `${grad} ${resto}`; curso = grad === 'Cad' ? 'CFO' : 'CFP'; naoAchou.push(nome);
+    }
+    if (!out[curso].includes(nome)) out[curso].push(nome);
+    if (/sobreaviso/i.test(l)) sob.push(nome); else plant.add(nome);
+    if (/cmt|comandante/i.test(l)) cmt.push(nome);
+  });
+  if (!out.CFP.length && !out.CFO.length) { alert('Não encontrei militares na foto. Tente uma foto mais nítida, reta e com boa luz.'); return; }
+  preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem, sob: sob.filter(n => !plant.has(n))});
+  alert(`Encontrei ${out.CFP.length} do CFP e ${out.CFO.length} do CFO.` +
+    (naoAchou.length ? `\n\nNão estão no efetivo (confira e corrija o nome): \n${naoAchou.join('\n')}` : '') +
+    `\n\nConfira com a foto se ninguém ficou de fora e marque os sobreavisos (Sobr.).`);
+}
+
 // ---------- Início ----------
 (function(){
   const hoje = new Date(); $('data').value = new Date(hoje - hoje.getTimezoneOffset()*6e4).toISOString().slice(0,10);
-  tipoPelaData(); lerPref(); if (!lerLink()) atualizar(true);
+  tipoPelaData(); lerPref(); lerEfetivo(); mostrarEfetivo(); if (!lerLink()) atualizar(true);
 })();
 </script>
 </body>
