@@ -76,7 +76,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha"></textarea>
-  <p class="mut">Marque o <b>comandante</b> (não tira hora nem faxina), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
+  <p class="mut">Marque quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
   <div id="pessoas" class="pessoas"></div>
 </div>
 
@@ -315,7 +315,7 @@ function atualizar(regerar){
   $('qtd').textContent = todos.length + (todos.length !== nomes.length ? ` · ${nomes.length} na escala` : '');
   // pessoas
   $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"><span>${esc(n)}</span>
-    <button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>
+    ${S.curso === 'CFO' ? `<button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>` : ''}
     ${c.cmt.has(n) ? '' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>`}
     ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita/Café</button>`}</div>`).join('');
   // postos
