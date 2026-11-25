@@ -76,17 +76,19 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha"></textarea>
-  <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita/café</b>.</p>
+  <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita</b>.</p>
   <div id="pessoas" class="pessoas"></div>
 </div>
 
 <div class="card">
-  <h2>Postos</h2>
-  <div id="postos"></div>
+  <h2>Postos por turno</h2>
   <div id="cfpServ"></div>
+  <p class="mut">Toque nos postos para abrir ou fechar em cada turno.</p>
+  <div id="turnosCfg"></div>
   <div class="row">
-    <div><label for="gGuar">Guarita (05h30–06h30)</label><input type="number" id="gGuar" min="0" max="6"></div>
-    <div><label for="gCafe">Café (06h00)</label><input type="number" id="gCafe" min="0" max="6"></div>
+    <div><label for="gGuar">Guarita 05h30–06h30</label><input type="number" id="gGuar" min="0" max="6"></div>
+    <div><label for="gCafe">Buscar café 06h00</label><input type="number" id="gCafe" min="0" max="6"></div>
+    <div><label for="minDur">Tempo mínimo no posto (min)</label><input type="number" id="minDur" min="10" max="120" step="5" value="30"></div>
   </div>
   <label class="chk"><input type="checkbox" id="rodar" checked> Trocar de posto a cada turno</label>
 </div>
@@ -97,11 +99,6 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
   <textarea id="faxina" style="min-height:120px" placeholder="Um local por linha"></textarea>
   <label for="faxQtd">Militares por local</label><input type="number" id="faxQtd" min="1" max="6" value="1">
   </details>
-</div>
-
-<div class="card">
-  <h2>Sugestões</h2>
-  <div id="opcoes" class="mut">Informe os militares para ver as sugestões.</div>
 </div>
 
 <div class="card" id="resCard" hidden>
@@ -143,16 +140,19 @@ const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-fe
 
 // ---------- Estado ----------
 function novoCurso(c){
-  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), postos:POSTOS[c].slice(), cfpServ:true,
-          gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, opc:0, plano:null, faxina:FAXINA[c].join('\n')};
+  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), cfpServ:true,
+          pt:{semana:TURNOS.semana.map(() => POSTOS[c].slice()), fds:TURNOS.fds.map(() => POSTOS[c].slice())},
+          gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, plano:null, faxina:FAXINA[c].join('\n')};
 }
 const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null};
 const cur = () => S.C[S.curso];
 const $ = id => document.getElementById(id);
+const tipo = () => $('tipo').value;
 
 // ---------- Utilidades ----------
 const hm = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2,'0') + 'h' + String(m%60).padStart(2,'0'); };
 const dur = m => Math.floor(m/60) + 'h' + (m%60 ? String(m%60).padStart(2,'0') : '');
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
 function embaralhar(a){ a = a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function lerNomes(txt){
   const vistos = {}; const out = [];
@@ -169,196 +169,163 @@ function dividir(a, b, k){ // k horários o mais iguais possível, em múltiplos
   for (let i=0;i<k;i++){ const d = (base + (i < r ? 1 : 0)) * 5; s.push([t, t+d]); t += d; }
   return s;
 }
-const maxSlot = (t, k) => k >= 1 ? Math.ceil((t.b - t.a) / 5 / k) * 5 : Infinity;
-function postosDoCurso(){
-  const c = cur();
-  return c.postos.filter(p => !(S.curso === 'CFO' && p === 'Alpendre' && c.cfpServ));
+const minDur = () => Math.min(MAX_MIN, Math.max(10, +$('minDur').value || 30));
+function disponiveis(){ const c = cur(); return POSTOS[S.curso].filter(p => !(S.curso === 'CFO' && p === 'Alpendre' && c.cfpServ)); }
+function postosTurno(ti){ const d = disponiveis(); return cur().pt[tipo()][ti].filter(p => d.includes(p)); }
+// quantos horários um turno terá com n militares e P postos
+function calcK(t, n, P){
+  const len = t.b - t.a, kMin = Math.ceil(len / MAX_MIN), kCap = Math.max(1, Math.floor(len / minDur()));
+  const K = Math.max(kMin, Math.min(Math.floor(n / P), kCap));
+  return {K, kMin, falta: K * P > n ? K * P - n : 0, fora: Math.max(0, n - K * P)};
 }
 
-// ---------- Sugestões ----------
-// Todos os militares entram na escala. Para cada nº de postos P procura:
-//  a = guarita/café que tiram posto nos turnos do dia (ideal: todos)
-//  b = guarita/café que também tiram madrugada (ideal: 0; ficam no 1º horário)
-//  x = demais militares que não tiram madrugada (ideal: 0)
-// Dia: N-g+a militares (K horários); madrugada: N-g-x+b militares (Kn horários).
-function gerarOpcoes(N, postos, g){
-  const turnos = TURNOS[$('tipo').value], dia = turnos.filter(t=>!t.madr), madr = turnos.find(t=>t.madr);
-  g = Math.min(g, N);
-  const ops = [];
-  for (let P = postos.length; P >= 1; P--) {
-    const cands = [];
-    for (let a = 0; a <= g; a++) for (let b = 0; b <= a; b++) for (let x = 0; x <= Math.min(N-g, 2*P); x++) {
-      const D = N - g + a, M = N - g - x + b;
-      if (D % P || M % P) continue;
-      const K = D / P, Kn = M / P;
-      if (K < 1 || Kn < 1) continue;
-      const mDia = Math.max(...dia.map(t=>maxSlot(t,K))), mMad = maxSlot(madr, Kn);
-      if (mDia > MAX_MIN || mMad > MAX_MIN) continue;
-      cands.push({P, K, Kn, a, b, x, g, mDia, mMad, pen: b + (g-a)*2 + x*3, fechados: postos.slice(P)});
-    }
-    cands.sort((u,v) => (u.pen - v.pen) || (Math.max(u.mDia,u.mMad) - Math.max(v.mDia,v.mMad)));
-    ops.push(...cands.slice(0, 2));
-  }
-  ops.sort((u,v) => (v.P - u.P) || (u.pen - v.pen) || (Math.max(u.mDia,u.mMad) - Math.max(v.mDia,v.mMad)));
-  return ops.slice(0, 6);
-}
-function descOpcao(o){
-  let s = `${o.K} horários por turno · até ${dur(o.mDia)} no posto` + (o.Kn !== o.K || o.mMad !== o.mDia ? ` · madrugada: ${o.Kn} horários de até ${dur(o.mMad)}` : '');
-  const ex = [];
-  if (o.g) {
-    if (o.a - o.b > 0) ex.push(`${o.a - o.b} de guarita/café no último horário, sem madrugada`);
-    if (o.b) ex.push(`⚠ ${o.b} de guarita/café na madrugada (1º horário)`);
-    if (o.g - o.a) ex.push(`⚠ ${o.g - o.a} só guarita/café, sem posto`);
-  }
-  if (o.x) ex.push(`⚠ ${o.x} militar(es) sem madrugada`);
-  if (o.fechados.length) ex.push(`Fecha: ${o.fechados.join(', ')}`);
-  return {t:`${o.P} posto${o.P>1?'s':''}`, s, extra: ex.join(' · ')};
-}
-
-// ---------- Montagem da escala ----------
-function montar(op, nomes, ae, fixG, g, gGuar){
-  const pess = embaralhar(nomes), tira = (arr, n) => arr.splice(arr.indexOf(n), 1);
-  g = op.g;
-  // guarita/café: escolhidos manualmente primeiro; quem tem aula externa é bom candidato (não pega 1º horário)
-  const G = pess.filter(n => fixG.has(n)).slice(0, g);
-  const fem = cur().fem; // femininas ficam livres para a faxina dos banheiros femininos
-  const cand = pess.filter(n => !G.includes(n)).sort((u,v) => (fem.has(u) - fem.has(v)) || (op.b ? 0 : ae.has(v) - ae.has(u)));
-  while (G.length < g && cand.length) G.push(cand.shift());
-  // b de guarita/café na madrugada (1º horário, então sem aula externa); a-b só no dia; o resto sem posto
-  const Gs = G.slice().sort((u,v) => ae.has(u) - ae.has(v));
-  const Gb = Gs.slice(0, op.b), Gr = G.filter(n => !Gb.includes(n)), Ga = Gr.slice(0, op.a - op.b);
+// ---------- Montagem ----------
+// A escala é uma ORDEM de militares. Em cada turno, os participantes (na ordem) são divididos
+// em blocos de P (nº de postos do turno): 1º bloco = 1º horário etc. Assim quem está no começo
+// num turno está no começo em todos. A guarita fica no fim da ordem e não tira madrugada.
+function montar(nomes){
+  const c = cur(), ae = c.ae, fem = c.fem;
+  const pess = embaralhar(nomes);
+  const G = pess.filter(n => c.fixG.has(n)).slice(0, c.gGuar);
+  const cand = pess.filter(n => !G.includes(n)).sort((u,v) => (fem.has(u) - fem.has(v)) || (ae.has(v) - ae.has(u)));
+  while (G.length < c.gGuar && cand.length) G.push(cand.shift());
   const resto = pess.filter(n => !G.includes(n));
-  // x militares sem madrugada (preferência: aula externa)
-  const X = resto.slice().sort((u,v) => ae.has(v) - ae.has(u)).slice(0, op.x);
-  X.forEach(n => tira(resto, n));
-
-  const pos = Array.from({length: op.K}, () => []);
-  const soDia = [...Ga, ...X];
-  for (let p = op.Kn; p < op.K; p++) while (pos[p].length < op.P && soDia.length) pos[p].push(soDia.shift());
-  Gb.forEach(n => pos[0].push(n));
-  const semAE = resto.filter(n => !ae.has(n));
-  while (pos[0].length < op.P && semAE.length) { const n = semAE.shift(); pos[0].push(n); tira(resto, n); }
-  for (let p = 0; p < op.Kn; p++) while (pos[p].length < op.P && resto.length) pos[p].push(resto.shift());
-  return {op, pos, guarita: G.slice(0, gGuar), cafe: G.slice(gGuar), reserva: [...resto, ...soDia]};
+  const maxP = Math.max(1, ...TURNOS[tipo()].map((t, ti) => postosTurno(ti).length));
+  const frente = resto.filter(n => !ae.has(n)).slice(0, maxP);
+  const meio = resto.filter(n => !frente.includes(n)).sort((u,v) => ae.has(u) - ae.has(v) || 0);
+  return {ordem: [...frente, ...embaralhar(meio.filter(n => !ae.has(n))), ...meio.filter(n => ae.has(n)), ...G], guarita: G};
+}
+function calcular(pl){
+  const turnos = TURNOS[tipo()], rodar = $('rodar').checked, G = new Set(pl.guarita);
+  const min = {}; pl.ordem.forEach(n => min[n] = 0);
+  const res = [];
+  turnos.forEach((t, ti) => {
+    const postos = postosTurno(ti), P = postos.length;
+    let part = pl.ordem.filter(n => !(t.madr && G.has(n)));
+    if (!P) { res.push({t, postos, slots: [], fora: [], falta: 0}); return; }
+    const k = calcK(t, part.length, P);
+    // quem fica fora deste turno: quem já tem mais tempo; guarita por último (não tira madrugada)
+    const fora = part.slice().map((n, i) => ({n, i})).sort((u,v) => (min[v.n] - min[u.n]) || (G.has(u.n) - G.has(v.n)) || (v.i - u.i)).slice(0, k.fora).map(o => o.n);
+    part = part.filter(n => !fora.includes(n));
+    const sl = dividir(t.a, t.b, k.K);
+    const slots = sl.map((s, i) => {
+      const bloco = part.slice(i * P, i * P + P);
+      const linha = postos.map((p, col) => { const j = rodar ? ((col - ti) % P + P) % P : col; return bloco[j] || null; });
+      linha.forEach(n => { if (n) min[n] += s[1] - s[0]; });
+      return {ini: s[0], fim: s[1], linha};
+    });
+    res.push({t, postos, slots, fora, falta: k.falta});
+  });
+  return {turnos: res, min};
 }
 
+// ---------- Faxina e café ----------
+function faxina(pl, min){
+  const c = cur(), locais = c.faxina.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const q = Math.max(1, +$('faxQtd').value || 1);
+  const G = new Set(pl.guarita);
+  const fila = pl.ordem.filter(n => !G.has(n)).sort((a,b) => (min[a]||0) - (min[b]||0));
+  const res = {}; locais.forEach(l => res[l] = []);
+  if (fila.length && locais.length) {
+    // Banheiro é o mais pesado: quem pega banheiro fica só com ele (se houver gente suficiente).
+    // Banheiro feminino: de preferência militares femininas; masculino: de preferência masculinos.
+    const fem = c.fem, ehBanh = l => /banheiro/i.test(l);
+    const gen = l => /femin/i.test(l) ? 'F' : /mascul/i.test(l) ? 'M' : '';
+    const banh = locais.filter(ehBanh).sort((u,v) => (gen(u) ? 0 : 1) - (gen(v) ? 0 : 1)), outros = locais.filter(l => !ehBanh(l));
+    const reserva = outros.length && fila.length > 1 ? 1 : 0;
+    const nB = Math.min(banh.length * q, fila.length - reserva);
+    const carga = {}, livres = fila.slice(), pB = [], sobra = [];
+    const pref = (l, lista) => { const g = gen(l); if (!g) return lista;
+      const ok = n => (g === 'F') === fem.has(n); return [...lista.filter(ok), ...lista.filter(n => !ok(n))]; };
+    banh.forEach(l => { for (let k = 0; k < q; k++) {
+      if (pB.length < nB) { const n = pref(l, livres)[0]; livres.splice(livres.indexOf(n), 1); pB.push(n); res[l].push(n); carga[n] = 1; }
+      else sobra.push(l);
+    } });
+    sobra.forEach(l => { const c2 = pref(l, pB.filter(n => !res[l].includes(n)).sort((u,v) => carga[u] - carga[v]));
+      if (c2.length) { res[l].push(c2[0]); carga[c2[0]]++; } });
+    const pO = livres.length ? livres : fila; let i = 0;
+    outros.forEach(l => { for (let k = 0; k < q; k++) { const n = pO[(i++) % pO.length]; if (!res[l].includes(n)) res[l].push(n); } });
+  }
+  const lista = locais.map(local => ({local, quem: res[local]}));
+  // café: missão extra (não exclusiva) — de preferência quem não pegou banheiro e tem menos tarefas
+  if (c.gCafe > 0 && fila.length) {
+    const tarefas = {}; lista.forEach(f => f.quem.forEach(n => tarefas[n] = (tarefas[n]||0) + (/banheiro/i.test(f.local) ? 10 : 1)));
+    const quem = fila.slice().sort((a,b) => (tarefas[a]||0) - (tarefas[b]||0)).slice(0, c.gCafe);
+    lista.push({local: 'Buscar café 06h00', quem, extra: true});
+  }
+  return lista;
+}
+
+// ---------- Tela ----------
 function render(){
   const c = cur(), pl = c.plano, out = $('resultado');
   if (!pl) { $('resCard').hidden = true; return; }
   $('resCard').hidden = false;
-  const turnos = TURNOS[$('tipo').value], postos = postosDoCurso().slice(0, pl.op.P), rodar = $('rodar').checked;
+  const R = calcular(pl), fax = faxina(pl, R.min);
   const nmBtn = n => n ? `<button class="nm${S.sel===n?' sel':''}${c.ae.has(n)?' ae':''}" data-n="${encodeURIComponent(n)}">${esc(n)}</button>` : '<span class="mut">—</span>';
-  let h = '';
-  const horas = {};
-  turnos.forEach((t, ti) => {
-    const k = t.madr ? pl.op.Kn : pl.op.K, sl = dividir(t.a, t.b, k);
-    h += `<h3>${t.nome} · ${hm(t.a)} – ${hm(t.b)}</h3><table class="tbl"><tr><th>Horário</th>${postos.map(p=>`<th>${esc(p)}</th>`).join('')}</tr>`;
-    sl.forEach((s, i) => {
-      h += `<tr><td class="h">${i+1}º · ${hm(s[0])}–${hm(s[1])}</td>`;
-      for (let col=0; col<postos.length; col++) {
-        const j = rodar ? ((col - ti) % postos.length + postos.length) % postos.length : col;
-        const n = pl.pos[i][j]; if (n) horas[n] = (horas[n]||0) + (s[1]-s[0]);
-        h += `<td>${nmBtn(n)}</td>`;
-      }
-      h += '</tr>';
+  let h = pl.cmt && pl.cmt.length ? `<p><b>Comandante:</b> ${pl.cmt.map(esc).join(', ')}</p>` : '';
+  const av = [];
+  R.turnos.forEach(T => {
+    h += `<h3>${T.t.nome} · ${hm(T.t.a)} – ${hm(T.t.b)}</h3>`;
+    if (!T.postos.length) { h += `<p class="mut">Sem postos abertos.</p>`; return; }
+    h += `<table class="tbl"><tr><th>Horário</th>${T.postos.map(p=>`<th>${esc(p)}</th>`).join('')}</tr>`;
+    T.slots.forEach((s, i) => {
+      h += `<tr><td class="h">${i+1}º · ${hm(s.ini)}–${hm(s.fim)}</td>${s.linha.map(n => `<td>${nmBtn(n)}</td>`).join('')}</tr>`;
+      if (i === 0) s.linha.forEach(n => { if (n && c.ae.has(n)) av.push(`${n} está de aula externa e ficou no 1º horário (${T.t.nome}).`); });
     });
     h += '</table>';
+    if (T.fora.length) h += `<p class="mut">Sem posto neste turno: ${T.fora.map(nmBtn).join(' ')}</p>`;
+    if (T.falta) av.push(`${T.t.nome}: faltam ${T.falta} militar(es) para cobrir os postos com no máximo 2h. Feche um posto neste turno.`);
   });
-  if (pl.guarita.length || pl.cafe.length) {
-    h += `<table class="tbl"><tr><th>Guarita 05h30–06h30</th><th>Café 06h00</th></tr>`;
-    const L = Math.max(pl.guarita.length, pl.cafe.length);
-    for (let i=0;i<L;i++) h += `<tr><td>${nmBtn(pl.guarita[i])}</td><td>${nmBtn(pl.cafe[i])}</td></tr>`;
-    h += '</table>';
-  }
-  if (pl.cmt && pl.cmt.length) h = `<p><b>Comandante:</b> ${pl.cmt.map(esc).join(', ')}</p>` + h;
-  const fax = faxina(pl, horas);
-  if (fax.length) h += `<table class="tbl"><tr><th>Faxina</th><th>Militar(es)</th></tr>${fax.map(f=>`<tr><td>${esc(f.local)}</td><td>${f.quem.map(nmBtn).join('')}</td></tr>`).join('')}</table>`;
-  if (pl.reserva.length) h += `<p class="mut">Fora dos postos: ${pl.reserva.map(nmBtn).join(' ')}</p>`;
-  // por militar
-  h += `<details><summary>Horas no posto por militar</summary><table class="tbl"><tr><th>Militar</th><th>Horário</th><th>Total</th></tr>`;
-  pl.pos.forEach((g, i) => g.forEach(n => h += `<tr><td>${esc(n)}</td><td>${i+1}º</td><td>${dur(horas[n]||0)}</td></tr>`));
-  h += '</table></details>';
+  if (pl.guarita.length) h += `<table class="tbl"><tr><th>Guarita 05h30–06h30</th></tr>${pl.guarita.map(n => `<tr><td>${nmBtn(n)}</td></tr>`).join('')}</table>`;
+  const faxL = fax.filter(f => f.quem.length || !f.extra);
+  if (faxL.length) h += `<table class="tbl"><tr><th>Faxina / missão</th><th>Militar(es)</th></tr>${faxL.map(f=>`<tr><td>${esc(f.local)}</td><td>${f.quem.map(nmBtn).join('')}</td></tr>`).join('')}</table>`;
+  h += `<details><summary>Tempo no posto por militar</summary><table class="tbl"><tr><th>Militar</th><th>Total</th></tr>${pl.ordem.map(n => `<tr><td>${esc(n)}</td><td>${dur(R.min[n]||0)}</td></tr>`).join('')}</table></details>`;
   out.innerHTML = h;
-  // avisos
-  const av = [];
-  pl.pos[0].forEach(n => { if (c.ae.has(n)) av.push(`${n} está de aula externa e ficou no 1º horário.`); });
-  const madrPos = pl.pos.slice(0, pl.op.Kn).flat();
-  [...pl.guarita, ...pl.cafe].forEach(n => {
-    if (madrPos.includes(n)) av.push(`${n} (guarita/café) tira posto na madrugada.`);
-    else if (!pl.pos.flat().includes(n)) av.push(`${n} faz só guarita/café, sem posto.`);
-  });
-  const ext = new Set([...pl.guarita, ...pl.cafe]);
-  pl.pos.flat().forEach(n => { if (!ext.has(n) && !madrPos.includes(n)) av.push(`${n} não tira madrugada.`); });
-  if (pl.reserva.length) av.push(`Ficaram fora dos postos: ${pl.reserva.join(', ')}.`);
-  pl.pos.forEach((g,i) => { if (g.length < pl.op.P) av.push(`${i+1}º horário com posto descoberto.`); });
+  const semPosto = pl.ordem.filter(n => !R.min[n]);
+  if (semPosto.length) av.push(`Sem nenhum posto no dia: ${semPosto.join(', ')}.`);
   $('avisos').innerHTML = av.length ? av.map(a=>`<div class="av-warn">⚠ ${esc(a)}</div>`).join('') : `<div class="av-ok">✔ Todas as regras atendidas.</div>`;
-  S.horas = horas; S.fax = fax;
+  S.R = R; S.fax = faxL;
 }
-function faxina(pl, horas){
-  const locais = cur().faxina.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  if (!locais.length) return [];
-  const q = Math.max(1, +$('faxQtd').value || 1);
-  const ext = new Set([...pl.guarita, ...pl.cafe]);
-  const fila = [...pl.reserva, ...pl.pos.flat().filter(n=>!ext.has(n)).sort((a,b)=>(horas[a]||0)-(horas[b]||0))];
-  if (!fila.length) return locais.map(local => ({local, quem: []}));
-  // Banheiro é o mais pesado: quem pega banheiro fica só com ele (se houver gente suficiente).
-  // Banheiro feminino: de preferência militares femininas; masculino: de preferência masculinos.
-  const fem = cur().fem, ehBanh = l => /banheiro/i.test(l);
-  const gen = l => /femin/i.test(l) ? 'F' : /mascul/i.test(l) ? 'M' : '';
-  const banh = locais.filter(ehBanh).sort((u,v) => (gen(u) ? 0 : 1) - (gen(v) ? 0 : 1)), outros = locais.filter(l => !ehBanh(l));
-  const reserva = outros.length && fila.length > 1 ? 1 : 0;
-  const nB = Math.min(banh.length * q, fila.length - reserva);
-  const res = {}; locais.forEach(l => res[l] = []);
-  const carga = {}, livres = fila.slice(), pB = [];
-  const pref = (l, lista) => { const g = gen(l); if (!g) return lista;
-    const ok = n => (g === 'F') === fem.has(n); return [...lista.filter(ok), ...lista.filter(n => !ok(n))]; };
-  const sobra = [];
-  banh.forEach(l => { for (let k = 0; k < q; k++) {
-    if (pB.length < nB) { const n = pref(l, livres)[0]; livres.splice(livres.indexOf(n), 1); pB.push(n); res[l].push(n); carga[n] = 1; }
-    else sobra.push(l);
-  } });
-  // banheiros que sobraram: para quem já está em banheiro, do mesmo gênero e com menos carga
-  sobra.forEach(l => { const c2 = pref(l, pB.filter(n => !res[l].includes(n)).sort((u,v) => carga[u] - carga[v]));
-    if (c2.length) { res[l].push(c2[0]); carga[c2[0]]++; } });
-  const pO = livres.length ? livres : fila; let i = 0;
-  outros.forEach(l => { for (let k = 0; k < q; k++) { const n = pO[(i++) % pO.length]; if (!res[l].includes(n)) res[l].push(n); } });
-  return locais.map(local => ({local, quem: res[local]}));
+function cfgTurnos(nomes){
+  const c = cur(), d = disponiveis(), G = Math.min(c.gGuar, nomes.length);
+  $('turnosCfg').innerHTML = TURNOS[tipo()].map((t, ti) => {
+    const ab = postosTurno(ti), P = ab.length, n = nomes.length - (t.madr ? G : 0);
+    let info = 'Turno sem postos.';
+    if (P && n) {
+      const k = calcK(t, n, P), sl = dividir(t.a, t.b, k.K), mx = Math.max(...sl.map(s => s[1]-s[0])), mn = Math.min(...sl.map(s => s[1]-s[0]));
+      info = `${k.K} horários de ${mn === mx ? dur(mx) : dur(mn) + ' a ' + dur(mx)}`;
+      if (k.falta) info = `⚠ Faltam ${k.falta} militar(es) — feche um posto`;
+      else if (k.fora) info += ` · ${k.fora} sem posto neste turno`;
+      const bons = []; for (let p = 1; p <= d.length; p++) { const kk = calcK(t, n, p); if (!kk.falta && !kk.fora) bons.push(p); }
+      if ((k.falta || k.fora) && bons.length) info += ` · para usar todos: ${bons.join(' ou ')} posto(s)`;
+    }
+    return `<div style="margin:10px 0"><b>${t.nome}</b> <span class="mut">${hm(t.a)}–${hm(t.b)}</span>
+      <div class="row" style="gap:6px;margin:6px 0">${d.map(p => `<button class="tag${ab.includes(p)?' on':''}" style="flex:0 1 auto" data-tp="${ti}|${esc(p)}">${esc(p)}</button>`).join('')}</div>
+      <div class="mut">${esc(info)}</div></div>`;
+  }).join('');
 }
-const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
-
-function trocar(a, b){
-  const pl = cur().plano, f = n => n === a ? b : n === b ? a : n;
-  pl.pos = pl.pos.map(g => g.map(f)); pl.guarita = pl.guarita.map(f); pl.cafe = pl.cafe.map(f); pl.reserva = pl.reserva.map(f);
-}
-
-// ---------- Interface ----------
 function atualizar(regerar){
   const c = cur(), todos = lerNomes(c.nomes), nomes = todos.filter(n => !c.cmt.has(n));
   $('qtd').textContent = todos.length + (todos.length !== nomes.length ? ` · ${nomes.length} na escala` : '');
-  // pessoas
   $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"><span>${esc(n)}</span>
     ${S.curso === 'CFO' ? `<button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>` : ''}
     <button class="tag${c.fem.has(n)?' on':''}" data-fem="${encodeURIComponent(n)}" title="Feminino">Fem.</button>
-    ${c.cmt.has(n) ? '' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>`}
-    ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita/Café</button>`}</div>`).join('');
-  // postos
-  $('postos').innerHTML = POSTOS[S.curso].map(p => `<label class="chk"><input type="checkbox" data-p="${esc(p)}" ${c.postos.includes(p)?'checked':''}> ${esc(p)}</label>`).join('');
+    ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>
+    <button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita</button>`}</div>`).join('');
   $('cfpServ').innerHTML = S.curso === 'CFO' ? `<label class="chk"><input type="checkbox" id="cfpS" ${c.cfpServ?'checked':''}> CFP também de serviço hoje (Alpendre fica com o CFP)</label>` : '';
   $('gGuar').value = c.gGuar; $('gCafe').value = c.gCafe;
   if (document.activeElement !== $('faxina')) $('faxina').value = c.faxina;
   $('faxN').textContent = c.faxina.split(/\r?\n/).filter(l=>l.trim()).length;
-  // opções
-  const g = c.gGuar + c.gCafe, postos = postosDoCurso();
-  if (!nomes.length) { $('opcoes').innerHTML = 'Informe os militares para ver as sugestões.'; c.plano = null; render(); return; }
-  const ops = gerarOpcoes(nomes.length, postos, g);
-  S.ops = ops;
-  if (!ops.length) { $('opcoes').innerHTML = '<div class="av-warn">Não há militares suficientes para cobrir os postos com no máximo 2h.</div>'; c.plano = null; render(); return; }
-  if (c.opc >= ops.length) c.opc = 0;
-  $('opcoes').innerHTML = ops.map((o,i) => { const d = descOpcao(o, g);
-    return `<button class="opc${i===c.opc?' on':''}" data-o="${i}"><b>${i===0?'⭐ ':''}${d.t}</b><small>${d.s}</small>${d.extra?`<small>${esc(d.extra)}</small>`:''}</button>`; }).join('');
-  if (regerar || !c.plano) c.plano = montar(ops[c.opc], nomes, c.ae, new Set([...c.fixG].filter(n => !c.cmt.has(n))), g, c.gGuar);
+  cfgTurnos(nomes);
+  if (!nomes.length) { c.plano = null; render(); return; }
+  if (regerar || !c.plano) c.plano = montar(nomes);
   c.plano.cmt = todos.filter(n => c.cmt.has(n));
   render();
+}
+function trocar(a, b){
+  const pl = cur().plano, f = n => n === a ? b : n === b ? a : n;
+  pl.ordem = pl.ordem.map(f); pl.guarita = pl.guarita.map(f);
 }
 function trocarCurso(k){
   cur().nomes = $('nomes').value; S.curso = k; S.sel = null;
@@ -371,28 +338,33 @@ function tipoPelaData(){
   const w = new Date(d + 'T12:00').getDay();
   $('tipo').value = (w === 0 || w === 6) ? 'fds' : 'semana';
 }
-
+const alterna = (set, v) => set.has(v) ? set.delete(v) : set.add(v);
 document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
-  const c = cur();
-  if (t.dataset.ae) { const n = decodeURIComponent(t.dataset.ae); c.ae.has(n) ? c.ae.delete(n) : c.ae.add(n); atualizar(true); }
-  else if (t.dataset.fem) { const n = decodeURIComponent(t.dataset.fem); c.fem.has(n) ? c.fem.delete(n) : c.fem.add(n); atualizar(true); }
-  else if (t.dataset.cmt) { const n = decodeURIComponent(t.dataset.cmt); c.cmt.has(n) ? c.cmt.delete(n) : c.cmt.add(n); atualizar(true); }
-  else if (t.dataset.g) { const n = decodeURIComponent(t.dataset.g); c.fixG.has(n) ? c.fixG.delete(n) : c.fixG.add(n); atualizar(true); }
-  else if (t.dataset.o) { c.opc = +t.dataset.o; atualizar(true); }
+  const c = cur(), d = s => decodeURIComponent(s);
+  if (t.dataset.ae) { alterna(c.ae, d(t.dataset.ae)); atualizar(true); }
+  else if (t.dataset.fem) { alterna(c.fem, d(t.dataset.fem)); atualizar(true); }
+  else if (t.dataset.cmt) { alterna(c.cmt, d(t.dataset.cmt)); atualizar(true); }
+  else if (t.dataset.g) { alterna(c.fixG, d(t.dataset.g)); atualizar(true); }
+  else if (t.dataset.tp) {
+    const [ti, p] = t.dataset.tp.split('|'), arr = c.pt[tipo()][+ti];
+    c.pt[tipo()][+ti] = POSTOS[S.curso].filter(x => x === p ? !arr.includes(p) : arr.includes(x));
+    $('imgBox').innerHTML = ''; atualizar(false);
+  }
   else if (t.dataset.n) {
-    const n = decodeURIComponent(t.dataset.n);
+    const n = d(t.dataset.n);
     if (!S.sel) S.sel = n; else if (S.sel === n) S.sel = null; else { trocar(S.sel, n); S.sel = null; }
     $('imgBox').innerHTML = ''; render();
   }
 });
 document.addEventListener('change', e => {
   const t = e.target, c = cur();
-  if (t.dataset.p) { const p = t.dataset.p; c.postos = POSTOS[S.curso].filter(x => x === p ? t.checked : c.postos.includes(x)); atualizar(true); salvarPref(); }
-  else if (t.id === 'cfpS') { c.cfpServ = t.checked; atualizar(true); }
-  else if (t.id === 'gGuar' || t.id === 'gCafe') { c[t.id] = Math.max(0, +t.value||0); atualizar(true); }
-  else if (t.id === 'tipo' || t.id === 'faxQtd') { atualizar(true); }
+  if (t.id === 'cfpS') { c.cfpServ = t.checked; atualizar(false); }
+  else if (t.id === 'gGuar') { c.gGuar = Math.max(0, +t.value||0); atualizar(true); }
+  else if (t.id === 'gCafe') { c.gCafe = Math.max(0, +t.value||0); render(); }
+  else if (t.id === 'tipo') { atualizar(true); }
   else if (t.id === 'data') { tipoPelaData(); atualizar(true); }
+  else if (t.id === 'minDur' || t.id === 'faxQtd') { atualizar(false); }
   else if (t.id === 'rodar') render();
 });
 let tmr; $('nomes').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(() => { cur().nomes = $('nomes').value; atualizar(true); }, 300); });
@@ -408,14 +380,13 @@ function lerPref(){ try { const p = JSON.parse(localStorage.getItem('escala-faxi
 // ---------- Imagem para WhatsApp ----------
 function gerarImagem(){
   const c = cur(), pl = c.plano; if (!pl) return;
-  const turnos = TURNOS[$('tipo').value], postos = postosDoCurso().slice(0, pl.op.P), rodar = $('rodar').checked;
+  const R = S.R, fax = S.fax;
   const W = 1080, pad = 40, colH = 190, rowH = 54, cv = document.createElement('canvas'), x = cv.getContext('2d');
-  const colW = (W - pad*2 - colH) / postos.length;
-  // altura
+  const tabs = R.turnos.filter(T => T.postos.length);
   let H = 190;
-  turnos.forEach(t => H += 60 + rowH * (1 + (t.madr ? pl.op.Kn : pl.op.K)) + 20);
-  const LG = Math.max(pl.guarita.length, pl.cafe.length); if (LG) H += 60 + rowH*(LG+1) + 20;
-  if (S.fax.length) H += 60 + rowH*(S.fax.length+1) + 20;
+  tabs.forEach(T => H += 60 + rowH * (1 + T.slots.length) + 20);
+  if (pl.guarita.length) H += 60 + rowH * (pl.guarita.length + 1) + 20;
+  if (fax.length) H += 60 + rowH * (fax.length + 1) + 20;
   H += 40;
   cv.width = W; cv.height = H;
   x.fillStyle = '#ffffff'; x.fillRect(0,0,W,H);
@@ -432,29 +403,27 @@ function gerarImagem(){
     x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(tx, cx + w/2, cy + rowH/2); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
   };
   const titulo = t => { x.fillStyle = '#b3261e'; x.font = 'bold 32px system-ui,sans-serif'; x.fillText(t, pad, y + 40); y += 60; };
-  turnos.forEach((t, ti) => {
-    titulo(`${t.nome.toUpperCase()}  ${hm(t.a)} – ${hm(t.b)}`);
+  tabs.forEach(T => {
+    titulo(`${T.t.nome.toUpperCase()}  ${hm(T.t.a)} – ${hm(T.t.b)}`);
+    const colW = (W - pad*2 - colH) / T.postos.length;
     cell('Horário', pad, y, colH, '#263238', '#ffffff', true);
-    postos.forEach((p, i) => cell(p, pad + colH + i*colW, y, colW, '#263238', '#ffffff', true));
+    T.postos.forEach((p, i) => cell(p, pad + colH + i*colW, y, colW, '#263238', '#ffffff', true));
     y += rowH;
-    dividir(t.a, t.b, t.madr ? pl.op.Kn : pl.op.K).forEach((s, i) => {
-      cell(`${hm(s[0])}–${hm(s[1])}`, pad, y, colH, '#fbeceb', '#b3261e', true);
-      for (let col=0; col<postos.length; col++) {
-        const j = rodar ? ((col - ti) % postos.length + postos.length) % postos.length : col;
-        cell(pl.pos[i][j] || '—', pad + colH + col*colW, y, colW, i%2?'#f4f5f7':'#ffffff', '#1d2329');
-      }
+    T.slots.forEach((s, i) => {
+      cell(`${hm(s.ini)}–${hm(s.fim)}`, pad, y, colH, '#fbeceb', '#b3261e', true);
+      s.linha.forEach((n, col) => cell(n || '—', pad + colH + col*colW, y, colW, i%2?'#f4f5f7':'#ffffff', '#1d2329'));
       y += rowH;
     });
     y += 20;
   });
-  const dupla = (tt, a, b, A, B) => {
-    titulo(tt); const w = (W - pad*2) / 2;
-    cell(a, pad, y, w, '#263238', '#ffffff', true); cell(b, pad + w, y, w, '#263238', '#ffffff', true); y += rowH;
-    for (let i=0;i<Math.max(A.length,B.length);i++){ cell(A[i]||'', pad, y, w, '#ffffff', '#1d2329'); cell(B[i]||'', pad+w, y, w, '#ffffff', '#1d2329'); y += rowH; }
+  const tabela = (tt, cab, linhas) => {
+    titulo(tt); const w = (W - pad*2) / cab.length;
+    cab.forEach((h, i) => cell(h, pad + i*w, y, w, '#263238', '#ffffff', true)); y += rowH;
+    linhas.forEach(l => { l.forEach((v, i) => cell(v, pad + i*w, y, w, '#ffffff', '#1d2329')); y += rowH; });
     y += 20;
   };
-  if (LG) dupla('GUARITA E CAFÉ', 'Guarita 05h30–06h30', 'Café 06h00', pl.guarita, pl.cafe);
-  if (S.fax.length) dupla('FAXINA', 'Local', 'Militar(es)', S.fax.map(f=>f.local), S.fax.map(f=>f.quem.join(', ')));
+  if (pl.guarita.length) tabela('GUARITA', ['05h30 – 06h30'], pl.guarita.map(n => [n]));
+  if (fax.length) tabela('FAXINA E MISSÕES', ['Local / missão', 'Militar(es)'], fax.map(f => [f.local, f.quem.join(', ')]));
   cv.toBlob(async blob => {
     const nome = `escala-${S.curso}-${$('data').value || 'dia'}.png`, file = new File([blob], nome, {type:'image/png'}), url = URL.createObjectURL(blob);
     $('imgBox').innerHTML = `<img id="img" src="${url}" alt="Escala ${S.curso}"><div class="row" style="margin-top:8px"><button class="pri" id="compart">📤 Compartilhar</button><a download="${nome}" href="${url}"><button>⬇ Baixar</button></a></div>`;
