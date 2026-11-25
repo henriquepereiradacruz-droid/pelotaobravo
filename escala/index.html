@@ -88,7 +88,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
   <div class="row">
     <div><label for="gGuar">Guarita 05h30–06h30</label><input type="number" id="gGuar" min="0" max="6"></div>
     <div><label for="gCafe">Buscar café 06h00</label><input type="number" id="gCafe" min="0" max="6"></div>
-    <div><label for="minDur">Tempo mínimo no posto (min)</label><input type="number" id="minDur" min="10" max="120" step="5" value="30"></div>
+    <div><label for="minDur">Tempo mínimo no posto (min)</label><input type="number" id="minDur" min="10" max="120" step="5" value="15"></div>
   </div>
   <label class="chk"><input type="checkbox" id="rodar" checked> Trocar de posto a cada turno</label>
 </div>
@@ -169,7 +169,7 @@ function dividir(a, b, k){ // k horários o mais iguais possível, em múltiplos
   for (let i=0;i<k;i++){ const d = (base + (i < r ? 1 : 0)) * 5; s.push([t, t+d]); t += d; }
   return s;
 }
-const minDur = () => Math.min(MAX_MIN, Math.max(10, +$('minDur').value || 30));
+const minDur = () => Math.min(MAX_MIN, Math.max(10, +$('minDur').value || 15));
 function disponiveis(){ const c = cur(); return POSTOS[S.curso].filter(p => !(S.curso === 'CFO' && p === 'Alpendre' && c.cfpServ)); }
 function postosTurno(ti){ const d = disponiveis(); return cur().pt[tipo()][ti].filter(p => d.includes(p)); }
 // quantos horários um turno terá com n militares e P postos
