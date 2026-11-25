@@ -90,6 +90,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha.&#10;Dica: *SILVA* ou **SILVA** marca o nome de guerra."></textarea>
   <div class="row"><div><label for="grad">Graduação padrão (quando a lista não traz)</label><input id="grad" style="width:100%;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit"></div></div>
   <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita</b>.</p>
+  <div id="sobBox"></div>
   <div id="pessoas" class="pessoas"></div>
 </div>
 
@@ -155,7 +156,7 @@ const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-fe
 
 // ---------- Estado ----------
 function novoCurso(c){
-  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), cfpServ:true,
+  return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), sob:new Set(), usaSob:false, cfpServ:true,
           pt:{semana:TURNOS.semana.map(() => POSTOS[c].slice()), fds:TURNOS.fds.map(() => POSTOS[c].slice())},
           gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, plano:null, fax:FAXINA[c].map(l => ({l, q:qtdPadrao(l)})), grad:c==='CFO'?'Cad':'Sd'};
 }
@@ -345,9 +346,12 @@ function cfgTurnos(nomes){
   }).join('');
 }
 function atualizar(regerar){
-  const c = cur(), todos = lerNomes(c.nomes), nomes = todos.filter(n => !c.cmt.has(n));
+  const c = cur(), todos = lerNomes(c.nomes), nomes = todos.filter(n => !c.cmt.has(n) && (c.usaSob || !c.sob.has(n)));
   $('qtd').textContent = todos.length + (todos.length !== nomes.length ? ` · ${nomes.length} na escala` : '');
-  $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"><span>${esc(n)}</span>
+  const nSob = todos.filter(n => c.sob.has(n)).length;
+  $('sobBox').innerHTML = `<label class="chk"><input type="checkbox" id="usaSob" ${c.usaSob?'checked':''}> Incluir sobreavisos na escala${nSob ? ` (${nSob})` : ''}</label>`;
+  $('pessoas').innerHTML = todos.map(n => `<div class="pessoa"${c.sob.has(n) && !c.usaSob ? ' style="opacity:.5"' : ''}><span>${esc(n)}</span>
+    <button class="tag${c.sob.has(n)?' on':''}" data-sob="${encodeURIComponent(n)}" title="Sobreaviso">Sobr.</button>
     ${S.curso === 'CFO' ? `<button class="tag${c.cmt.has(n)?' on':''}" data-cmt="${encodeURIComponent(n)}" title="Comandante: não tira hora nem faxina">Cmt</button>` : ''}
     <button class="tag${c.fem.has(n)?' on':''}" data-fem="${encodeURIComponent(n)}" title="Feminino">Fem.</button>
     ${c.cmt.has(n) ? '<span class="mut">não tira hora</span>' : `<button class="tag${c.ae.has(n)?' on':''}" data-ae="${encodeURIComponent(n)}">Aula ext.</button>
@@ -389,6 +393,7 @@ document.addEventListener('click', e => {
   const c = cur(), d = s => decodeURIComponent(s);
   if (t.dataset.ae) { alterna(c.ae, d(t.dataset.ae)); atualizar(true); }
   else if (t.dataset.fem) { alterna(c.fem, d(t.dataset.fem)); atualizar(true); }
+  else if (t.dataset.sob) { alterna(c.sob, d(t.dataset.sob)); atualizar(true); }
   else if (t.dataset.cmt) { alterna(c.cmt, d(t.dataset.cmt)); atualizar(true); }
   else if (t.dataset.g) { alterna(c.fixG, d(t.dataset.g)); atualizar(true); }
   else if (t.dataset.tp) {
@@ -411,7 +416,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target, c = cur();
-  if (t.id === 'cfpS') { c.cfpServ = t.checked; atualizar(false); }
+  if (t.id === 'usaSob') { c.usaSob = t.checked; atualizar(true); }
+  else if (t.id === 'cfpS') { c.cfpServ = t.checked; atualizar(false); }
   else if (t.id === 'gGuar') { c.gGuar = Math.max(0, +t.value||0); atualizar(true); }
   else if (t.id === 'gCafe') { c.gCafe = Math.max(0, +t.value||0); render(); }
   else if (t.id === 'tipo') { atualizar(true); }
@@ -526,7 +532,7 @@ async function importarPdf(arq){
   const btn = $('btnPdf'), txt0 = btn.textContent; btn.textContent = 'Lendo PDF…'; btn.disabled = true;
   try {
     const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise;
-    const out = {CFP: [], CFO: []}, cmt = [], semCurso = []; let data = '';
+    const out = {CFP: [], CFO: []}, cmt = [], semCurso = [], sob = [], plant = new Set(); let data = '';
     for (let pg = 1; pg <= doc.numPages; pg++) {
       const page = await doc.getPage(pg); await page.getOperatorList(); // carrega as fontes
       const tc = await page.getTextContent(), linhas = {};
@@ -541,18 +547,19 @@ async function importarPdf(arq){
         let ng, funcao = '', grad;
         if (iG >= 0) { grad = achaGrad(its[iG].s); ng = junta(its.slice(iG + 1).filter(i => i.b)); funcao = junta(its.slice(0, iG)); }
         else { ng = junta(its.filter(i => i.b)); grad = achaGrad(tudo); if (ng === tudo) return; }
-        if (!ng || /sobreaviso/i.test(funcao)) return;
+        if (!ng) return;
         const curso = grad === 'Cad' || grad === 'Al Of' ? 'CFO' : grad ? 'CFP' : '';
         const nome = ((grad || cur().grad) + ' ' + ng.toUpperCase()).trim();
         const alvo = out[curso || S.curso];
         if (!alvo.includes(nome)) alvo.push(nome);
+        if (/sobreaviso/i.test(funcao)) sob.push(nome); else plant.add(nome);
         if (/cmt|comandante/i.test(funcao)) cmt.push(nome);
         if (!curso) semCurso.push(nome);
       });
     }
     if (!out.CFP.length && !out.CFO.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
-    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: []});
-    alert(`Importados: ${out.CFP.length} do CFP e ${out.CFO.length} do CFO (Sobreaviso fica de fora). Confira as listas nas abas CFP e CFO.`);
+    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: [], sob: sob.filter(n => !plant.has(n))});
+    alert(`Importados: ${out.CFP.length} do CFP e ${out.CFO.length} do CFO. Sobreavisos marcados (Sobr.) ficam fora até você ativar. Confira as listas nas abas CFP e CFO.`);
   } catch(e) { alert('Não consegui ler o PDF: ' + e.message); }
   finally { btn.textContent = txt0; btn.disabled = false; $('arqPdf').value = ''; }
 }
@@ -571,18 +578,19 @@ function preencher(o){
   for (const k of ['CFP','CFO']) if (o[k] && o[k].length) {
     const c = S.C[k]; c.nomes = o[k].join('\n'); c.plano = null;
     c.cmt = new Set((o.cmt || []).filter(n => o[k].includes(n)));
+    c.sob = new Set((o.sob || []).filter(n => o[k].includes(n))); c.usaSob = false;
     (o.fem || []).filter(n => o[k].includes(n)).forEach(n => c.fem.add(n));
   }
   const k = o.CFP && o.CFP.length ? 'CFP' : 'CFO';
   S.curso = k; $('tab-CFP').classList.toggle('on', k==='CFP'); $('tab-CFO').classList.toggle('on', k==='CFO');
   $('nomes').value = cur().nomes; atualizar(true);
 }
-// Link pronto: #d=AAAA-MM-DD&cfp=Nome;Nome&cfo=...&cmt=...&fem=...
+// Link pronto: #d=AAAA-MM-DD&cfp=Nome;Nome&cfo=...&cmt=...&fem=...&sob=...
 function lerLink(){
   if (!location.hash || location.hash.length < 3) return false;
   const p = new URLSearchParams(location.hash.slice(1)), L = k => (p.get(k) || '').split(';').map(s => s.trim()).filter(Boolean);
   if (!p.get('cfp') && !p.get('cfo')) return false;
-  preencher({data: p.get('d') || '', CFP: L('cfp'), CFO: L('cfo'), cmt: L('cmt'), fem: L('fem')});
+  preencher({data: p.get('d') || '', CFP: L('cfp'), CFO: L('cfo'), cmt: L('cmt'), fem: L('fem'), sob: L('sob')});
   history.replaceState(null, '', location.pathname);
   return true;
 }
