@@ -68,7 +68,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 </head>
 <body>
 <main>
-<header><span class="mark"></span><h1>Escala de Postos</h1></header>
+<header><span class="mark"></span><h1 style="flex:1">Escala de Postos</h1><button id="novoServ" style="padding:8px 12px;font-size:14px">🗑 Novo serviço</button></header>
 
 <div class="card">
   <div class="row">
@@ -387,6 +387,16 @@ function renderFax(){
   $('faxLista').innerHTML = c.fax.map((f, i) => `<div class="fx"><input data-fl="${i}" value="${esc(f.l)}">
     <button data-fq="${i}|-1">−</button><b>${f.q}</b><button data-fq="${i}|1">＋</button><button data-fd="${i}" title="Remover">✕</button></div>`).join('');
 }
+// Zera o dia: nomes, marcações, postos e horários dos turnos. Mantém o efetivo e os locais de faxina.
+function novoServico(){
+  if (!confirm('Começar um novo serviço? Os nomes e marcações do CFP e do CFO serão apagados. O efetivo e os locais de faxina continuam salvos.')) return;
+  for (const k of ['CFP','CFO']) { const n = novoCurso(k); n.fax = S.C[k].fax; S.C[k] = n; }
+  S.hor = {}; S.sel = null; salvarPref();
+  const hoje = new Date(); $('data').value = new Date(hoje - hoje.getTimezoneOffset()*6e4).toISOString().slice(0,10); tipoPelaData();
+  S.curso = 'CFP'; $('tab-CFP').classList.add('on'); $('tab-CFO').classList.remove('on');
+  $('nomes').value = ''; $('imgBox').innerHTML = ''; $('minDur').value = 15;
+  atualizar(true); window.scrollTo({top: 0, behavior: 'smooth'});
+}
 function trocar(a, b){
   const pl = cur().plano, f = n => n === a ? b : n === b ? a : n;
   pl.ordem = pl.ordem.map(f); pl.guarita = pl.guarita.map(f);
@@ -422,6 +432,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.dl) baixar(+t.dataset.dl);
   else if (t.dataset.sh) compartilhar([+t.dataset.sh]);
   else if (t.id === 'shAll') compartilhar(S.imgs.map((_, i) => i));
+  else if (t.id === 'novoServ') novoServico();
   else if (t.id === 'btnPdf') $('arqPdf').click();
   else if (t.id === 'btnFoto') $('arqFoto').click();
   else if (t.id === 'btnEf') $('arqEf').click();
@@ -764,6 +775,7 @@ function interpretarLinhas(linhas){
 (function(){
   const hoje = new Date(); $('data').value = new Date(hoje - hoje.getTimezoneOffset()*6e4).toISOString().slice(0,10);
   tipoPelaData(); lerPref(); lerEfetivo(); mostrarEfetivo(); if (!lerLink()) atualizar(true);
+  window.addEventListener('hashchange', lerLink);
 })();
 </script>
 </body>
