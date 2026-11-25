@@ -299,8 +299,19 @@ function faxina(pl, horas){
   const q = Math.max(1, +$('faxQtd').value || 1);
   const ext = new Set([...pl.guarita, ...pl.cafe]);
   const fila = [...pl.reserva, ...pl.pos.flat().filter(n=>!ext.has(n)).sort((a,b)=>(horas[a]||0)-(horas[b]||0))];
-  let i = 0;
-  return locais.map(local => ({local, quem: Array.from({length:q}, () => fila.length ? fila[(i++) % fila.length] : null).filter(Boolean)}));
+  if (!fila.length) return locais.map(local => ({local, quem: []}));
+  // Banheiro é o mais pesado: quem pega banheiro fica só com ele (se houver gente suficiente).
+  const ehBanh = l => /banheiro/i.test(l);
+  const banh = locais.filter(ehBanh), outros = locais.filter(l => !ehBanh(l));
+  const reserva = outros.length && fila.length > 1 ? 1 : 0;
+  const nB = Math.min(banh.length * q, fila.length - reserva);
+  const pB = fila.slice(0, nB), pO = fila.slice(nB).length ? fila.slice(nB) : fila;
+  const res = {}; locais.forEach(l => res[l] = []);
+  const distribuir = (lista, pessoas) => { let i = 0;
+    lista.forEach(l => { for (let k = 0; k < q; k++) { const n = pessoas[(i++) % pessoas.length]; if (!res[l].includes(n)) res[l].push(n); } }); };
+  if (pB.length) distribuir(banh, pB);
+  distribuir(outros, pO);
+  return locais.map(local => ({local, quem: res[local]}));
 }
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
 
