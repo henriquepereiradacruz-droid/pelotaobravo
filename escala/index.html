@@ -33,8 +33,8 @@ button.pri,button.on{background:var(--acc);color:var(--acc-tx);border-color:var(
 .chk{display:flex;align-items:center;gap:8px;margin:6px 0;color:var(--txt);font-size:15px}
 .chk input{width:20px;height:20px;accent-color:var(--acc)}
 .pessoas{display:flex;flex-direction:column;gap:6px}
-.pessoa{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-.pessoa span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pessoa{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px}
+.pessoa span{flex:0 0 100%;font-weight:600;overflow-wrap:anywhere}
 .tag{font-size:12px;padding:6px 8px;border-radius:6px}
 .opc{display:block;text-align:left;width:100%;margin:6px 0}
 .opc small{display:block;color:inherit;opacity:.85}
@@ -130,9 +130,11 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 "use strict";
 // ---------- Configuração fixa ----------
 const POSTOS = {
-  CFP: ['Hall de Entrada','Alpendre','Cidade do Fogo','Corredor CFP'],
+  CFP: ['Hall de Entrada','Alpendre','Cidade do Fogo','Corredor CFP','Lavanderia','Bloco sala de aula'],
   CFO: ['Alpendre','Corredor CFO']
 };
+// postos que só abrem quando você ativa no turno
+const POSTOS_EXTRA = ['Lavanderia','Bloco sala de aula'];
 const TURNOS = {
   semana: [
     {nome:'Noite', a:18*60, b:24*60},
@@ -157,7 +159,7 @@ const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-fe
 // ---------- Estado ----------
 function novoCurso(c){
   return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), sob:new Set(), usaSob:false, cfpServ:true,
-          pt:{semana:TURNOS.semana.map(() => POSTOS[c].slice()), fds:TURNOS.fds.map(() => POSTOS[c].slice())},
+          pt:{semana:TURNOS.semana.map(() => POSTOS[c].filter(p => !POSTOS_EXTRA.includes(p))), fds:TURNOS.fds.map(() => POSTOS[c].filter(p => !POSTOS_EXTRA.includes(p)))},
           gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, plano:null, fax:FAXINA[c].map(l => ({l, q:qtdPadrao(l)})), grad:c==='CFO'?'Cad':'Sd'};
 }
 const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null, hor:{}};
