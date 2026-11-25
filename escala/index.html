@@ -53,6 +53,14 @@ h3{margin:10px 0 4px;font-size:15px}
 .scroll{overflow-x:auto}
 details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 #img{max-width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--line)}
+.fx{display:flex;gap:6px;align-items:center;margin:4px 0}
+.fx input{flex:1;min-width:0;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+.fx button{padding:8px 11px}
+.fx b{min-width:18px;text-align:center}
+.hr{display:flex;gap:6px;align-items:center;margin:4px 0}
+.hr input{width:auto;flex:0 1 120px;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit}
+.imgs{display:flex;flex-direction:column;gap:14px;margin-top:10px}
+.imgs img{max-width:100%;border-radius:8px;border:1px solid var(--line)}
 .sticky{position:sticky;bottom:0;background:linear-gradient(transparent,var(--card) 30%);padding-top:20px}
 </style>
 </head>
@@ -75,7 +83,12 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
-  <textarea id="nomes" placeholder="Cole ou digite um nome por linha"></textarea>
+  <div class="row" style="margin-bottom:8px">
+    <button id="btnPdf">📄 Importar PDF (nome de guerra em negrito)</button>
+    <input type="file" id="arqPdf" accept="application/pdf" hidden>
+  </div>
+  <textarea id="nomes" placeholder="Cole ou digite um nome por linha.&#10;Dica: *SILVA* ou **SILVA** marca o nome de guerra."></textarea>
+  <div class="row"><div><label for="grad">Graduação padrão (quando a lista não traz)</label><input id="grad" style="width:100%;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit"></div></div>
   <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita</b>.</p>
   <div id="pessoas" class="pessoas"></div>
 </div>
@@ -95,9 +108,9 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 
 <div class="card">
   <h2>Faxina</h2>
-  <details><summary>Editar locais (<span id="faxN">0</span>)</summary>
-  <textarea id="faxina" style="min-height:120px" placeholder="Um local por linha"></textarea>
-  <label for="faxQtd">Militares por local</label><input type="number" id="faxQtd" min="1" max="6" value="1">
+  <details><summary>Editar locais e quantidade (<span id="faxN">0</span>)</summary>
+  <div id="faxLista"></div>
+  <button id="faxAdd" style="margin-top:6px">＋ Adicionar local</button>
   </details>
 </div>
 
@@ -107,7 +120,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
   <div class="row"><button id="embaralhar">🔀 Sortear de novo</button></div>
   <div id="avisos" class="avisos"></div>
   <div id="resultado" class="scroll"></div>
-  <div class="sticky"><button class="pri" id="gerar" style="width:100%">✅ Horários ok — gerar imagem</button></div>
+  <div class="sticky"><button class="pri" id="gerar" style="width:100%">✅ Horários ok — gerar imagens</button></div>
   <div id="imgBox"></div>
 </div>
 </main>
@@ -136,15 +149,23 @@ const FAXINA = {
   CFP: ['Coordenação CFP','Pátio','Corredor sala de aula','Banheiro Masculino sala de aula','Banheiro Feminino sala de aula','Banheiro Masculino auditório','Banheiro Feminino auditório','Hall de Entrada','Alojamento Praças','Alojamento Oficiais','Lavanderia'],
   CFO: ['Coordenação CFO','Corredor e copa sala de aula','Banheiro Masculino sala de aula','Banheiro Feminino sala de aula','Banheiro Feminino bloco alojamento','Banheiro 3','Banheiro 4','Banheiro 5','Copa alojamento']
 };
+// banheiro masculino e pátio precisam de no mínimo 2; feminino e demais, 1
+const qtdPadrao = l => /banheiro\s+mascul|p[áa]tio/i.test(l) ? 2 : 1;
 const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
 
 // ---------- Estado ----------
 function novoCurso(c){
   return {nomes:'', ae:new Set(), fixG:new Set(), cmt:new Set(), fem:new Set(), cfpServ:true,
           pt:{semana:TURNOS.semana.map(() => POSTOS[c].slice()), fds:TURNOS.fds.map(() => POSTOS[c].slice())},
-          gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, plano:null, faxina:FAXINA[c].join('\n')};
+          gGuar:c==='CFP'?2:0, gCafe:c==='CFP'?2:0, plano:null, fax:FAXINA[c].map(l => ({l, q:qtdPadrao(l)})), grad:c==='CFO'?'Cad':'Sd'};
 }
-const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null};
+const S = {curso:'CFP', C:{CFP:novoCurso('CFP'), CFO:novoCurso('CFO')}, sel:null, hor:{}};
+// horários de início/término de cada turno (valem para CFP e CFO)
+function turnos(){
+  const tp = tipo(); return TURNOS[tp].map((t, ti) => { const h = (S.hor[tp] || {})[ti]; return h ? {...t, a:h.a, b:h.b} : t; });
+}
+const paraMin = v => { const [h, m] = v.split(':').map(Number); return h*60 + (m||0); };
+const hhmm = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'); };
 const cur = () => S.C[S.curso];
 const $ = id => document.getElementById(id);
 const tipo = () => $('tipo').value;
@@ -157,12 +178,23 @@ function embaralhar(a){ a = a.slice(); for(let i=a.length-1;i>0;i--){const j=Mat
 function lerNomes(txt){
   const vistos = {}; const out = [];
   for (let l of txt.split(/\r?\n/)) {
-    l = l.replace(/^\s*\d+\s*[-.)º°:]*\s*/, '').trim();
+    l = l.replace(/^\s*\d+\s*[-.)º°:]+\s*/, '').trim();
     if (!l) continue;
+    const ng = l.match(/\*{1,2}([^*]+)\*{1,2}/);
+    if (ng) l = (achaGrad(l) || cur().grad) + ' ' + ng[1].trim().toUpperCase();
     let n = l; if (vistos[l]) n = l + ' (' + (++vistos[l]) + ')'; else vistos[l] = 1;
     out.push(n);
   }
   return out;
+}
+const GRADS = ['Sub Ten','Subten','St','1º Sgt','2º Sgt','3º Sgt','Sgt','Cb','Sd','Al Sd','Cad','Asp','Al Of','Al','1º Ten','2º Ten','Ten','Cap','Maj'];
+function achaGrad(l){
+  const t = l.replace(/\*/g, '');
+  for (const g of GRADS.slice().sort((a,b) => b.length - a.length)) {
+    const re = new RegExp('(^|\\s)' + g.replace(/[º ]/g, m => m === ' ' ? '\\s*' : '[º°o]?') + '(\\.|\\s|$)', 'i');
+    if (re.test(t)) return g;
+  }
+  return '';
 }
 function dividir(a, b, k){ // k horários o mais iguais possível, em múltiplos de 5 min
   const u = (b - a) / 5, base = Math.floor(u / k), r = u % k, s = []; let t = a;
@@ -190,16 +222,16 @@ function montar(nomes){
   const cand = pess.filter(n => !G.includes(n)).sort((u,v) => (fem.has(u) - fem.has(v)) || (ae.has(v) - ae.has(u)));
   while (G.length < c.gGuar && cand.length) G.push(cand.shift());
   const resto = pess.filter(n => !G.includes(n));
-  const maxP = Math.max(1, ...TURNOS[tipo()].map((t, ti) => postosTurno(ti).length));
+  const maxP = Math.max(1, ...turnos().map((t, ti) => postosTurno(ti).length));
   const frente = resto.filter(n => !ae.has(n)).slice(0, maxP);
   const meio = resto.filter(n => !frente.includes(n)).sort((u,v) => ae.has(u) - ae.has(v) || 0);
   return {ordem: [...frente, ...embaralhar(meio.filter(n => !ae.has(n))), ...meio.filter(n => ae.has(n)), ...G], guarita: G};
 }
 function calcular(pl){
-  const turnos = TURNOS[tipo()], rodar = $('rodar').checked, G = new Set(pl.guarita);
+  const TT = turnos(), rodar = $('rodar').checked, G = new Set(pl.guarita);
   const min = {}; pl.ordem.forEach(n => min[n] = 0);
   const res = [];
-  turnos.forEach((t, ti) => {
+  TT.forEach((t, ti) => {
     const postos = postosTurno(ti), P = postos.length;
     let part = pl.ordem.filter(n => !(t.madr && G.has(n)));
     if (!P) { res.push({t, postos, slots: [], fora: [], falta: 0}); return; }
@@ -221,30 +253,33 @@ function calcular(pl){
 
 // ---------- Faxina e café ----------
 function faxina(pl, min){
-  const c = cur(), locais = c.faxina.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  const q = Math.max(1, +$('faxQtd').value || 1);
+  const c = cur(), itens = c.fax.filter(f => f.l.trim()), locais = itens.map(f => f.l.trim());
+  const qtd = {}; itens.forEach(f => qtd[f.l.trim()] = Math.max(1, f.q|0));
   const G = new Set(pl.guarita);
   const fila = pl.ordem.filter(n => !G.has(n)).sort((a,b) => (min[a]||0) - (min[b]||0));
   const res = {}; locais.forEach(l => res[l] = []);
+  // vagas em rodadas: primeiro 1 por local, depois a 2ª pessoa etc. (se faltar gente, todo local tem ao menos 1)
+  const vagas = ls => { const v = [], mx = Math.max(0, ...ls.map(l => qtd[l])); for (let r = 0; r < mx; r++) ls.forEach(l => { if (qtd[l] > r) v.push(l); }); return v; };
   if (fila.length && locais.length) {
     // Banheiro é o mais pesado: quem pega banheiro fica só com ele (se houver gente suficiente).
     // Banheiro feminino: de preferência militares femininas; masculino: de preferência masculinos.
     const fem = c.fem, ehBanh = l => /banheiro/i.test(l);
     const gen = l => /femin/i.test(l) ? 'F' : /mascul/i.test(l) ? 'M' : '';
     const banh = locais.filter(ehBanh).sort((u,v) => (gen(u) ? 0 : 1) - (gen(v) ? 0 : 1)), outros = locais.filter(l => !ehBanh(l));
+    const vB = vagas(banh), vO = vagas(outros);
     const reserva = outros.length && fila.length > 1 ? 1 : 0;
-    const nB = Math.min(banh.length * q, fila.length - reserva);
+    const nB = Math.min(vB.length, fila.length - reserva);
     const carga = {}, livres = fila.slice(), pB = [], sobra = [];
     const pref = (l, lista) => { const g = gen(l); if (!g) return lista;
       const ok = n => (g === 'F') === fem.has(n); return [...lista.filter(ok), ...lista.filter(n => !ok(n))]; };
-    banh.forEach(l => { for (let k = 0; k < q; k++) {
+    vB.forEach(l => {
       if (pB.length < nB) { const n = pref(l, livres)[0]; livres.splice(livres.indexOf(n), 1); pB.push(n); res[l].push(n); carga[n] = 1; }
       else sobra.push(l);
-    } });
+    });
     sobra.forEach(l => { const c2 = pref(l, pB.filter(n => !res[l].includes(n)).sort((u,v) => carga[u] - carga[v]));
       if (c2.length) { res[l].push(c2[0]); carga[c2[0]]++; } });
     const pO = livres.length ? livres : fila; let i = 0;
-    outros.forEach(l => { for (let k = 0; k < q; k++) { const n = pO[(i++) % pO.length]; if (!res[l].includes(n)) res[l].push(n); } });
+    vO.forEach(l => { for (let t = 0; t < pO.length; t++) { const n = pO[(i++) % pO.length]; if (!res[l].includes(n)) { res[l].push(n); break; } } });
   }
   const lista = locais.map(local => ({local, quem: res[local]}));
   // café: missão extra (não exclusiva) — de preferência quem não pegou banheiro e tem menos tarefas
@@ -289,7 +324,7 @@ function render(){
 }
 function cfgTurnos(nomes){
   const c = cur(), d = disponiveis(), G = Math.min(c.gGuar, nomes.length);
-  $('turnosCfg').innerHTML = TURNOS[tipo()].map((t, ti) => {
+  $('turnosCfg').innerHTML = turnos().map((t, ti) => {
     const ab = postosTurno(ti), P = ab.length, n = nomes.length - (t.madr ? G : 0);
     let info = 'Turno sem postos.';
     if (P && n) {
@@ -300,7 +335,8 @@ function cfgTurnos(nomes){
       const bons = []; for (let p = 1; p <= d.length; p++) { const kk = calcK(t, n, p); if (!kk.falta && !kk.fora) bons.push(p); }
       if ((k.falta || k.fora) && bons.length) info += ` · para usar todos: ${bons.join(' ou ')} posto(s)`;
     }
-    return `<div style="margin:10px 0"><b>${t.nome}</b> <span class="mut">${hm(t.a)}–${hm(t.b)}</span>
+    return `<div style="margin:12px 0"><b>${t.nome}</b>
+      <div class="hr"><input type="time" step="300" data-hi="${ti}" value="${hhmm(t.a)}"> até <input type="time" step="300" data-hf="${ti}" value="${hhmm(t.b)}"></div>
       <div class="row" style="gap:6px;margin:6px 0">${d.map(p => `<button class="tag${ab.includes(p)?' on':''}" style="flex:0 1 auto" data-tp="${ti}|${esc(p)}">${esc(p)}</button>`).join('')}</div>
       <div class="mut">${esc(info)}</div></div>`;
   }).join('');
@@ -315,13 +351,19 @@ function atualizar(regerar){
     <button class="tag${c.fixG.has(n)?' on':''}" data-g="${encodeURIComponent(n)}">Guarita</button>`}</div>`).join('');
   $('cfpServ').innerHTML = S.curso === 'CFO' ? `<label class="chk"><input type="checkbox" id="cfpS" ${c.cfpServ?'checked':''}> CFP também de serviço hoje (Alpendre fica com o CFP)</label>` : '';
   $('gGuar').value = c.gGuar; $('gCafe').value = c.gCafe;
-  if (document.activeElement !== $('faxina')) $('faxina').value = c.faxina;
-  $('faxN').textContent = c.faxina.split(/\r?\n/).filter(l=>l.trim()).length;
+  if (document.activeElement !== $('grad')) $('grad').value = c.grad;
+  renderFax();
   cfgTurnos(nomes);
   if (!nomes.length) { c.plano = null; render(); return; }
   if (regerar || !c.plano) c.plano = montar(nomes);
   c.plano.cmt = todos.filter(n => c.cmt.has(n));
   render();
+}
+function renderFax(){
+  const c = cur(); $('faxN').textContent = c.fax.length;
+  if (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.fl !== undefined) return;
+  $('faxLista').innerHTML = c.fax.map((f, i) => `<div class="fx"><input data-fl="${i}" value="${esc(f.l)}">
+    <button data-fq="${i}|-1">−</button><b>${f.q}</b><button data-fq="${i}|1">＋</button><button data-fd="${i}" title="Remover">✕</button></div>`).join('');
 }
 function trocar(a, b){
   const pl = cur().plano, f = n => n === a ? b : n === b ? a : n;
@@ -351,6 +393,13 @@ document.addEventListener('click', e => {
     c.pt[tipo()][+ti] = POSTOS[S.curso].filter(x => x === p ? !arr.includes(p) : arr.includes(x));
     $('imgBox').innerHTML = ''; atualizar(false);
   }
+  else if (t.dataset.fq) { const [i, d2] = t.dataset.fq.split('|').map(Number); c.fax[i].q = Math.max(1, Math.min(6, c.fax[i].q + d2)); salvarPref(); renderFax(); render(); }
+  else if (t.dataset.fd) { c.fax.splice(+t.dataset.fd, 1); salvarPref(); renderFax(); render(); }
+  else if (t.id === 'faxAdd') { c.fax.push({l:'', q:1}); renderFax(); const ins = $('faxLista').querySelectorAll('input'); ins[ins.length-1].focus(); }
+  else if (t.dataset.dl) baixar(+t.dataset.dl);
+  else if (t.dataset.sh) compartilhar([+t.dataset.sh]);
+  else if (t.id === 'shAll') compartilhar(S.imgs.map((_, i) => i));
+  else if (t.id === 'btnPdf') $('arqPdf').click();
   else if (t.dataset.n) {
     const n = d(t.dataset.n);
     if (!S.sel) S.sel = n; else if (S.sel === n) S.sel = null; else { trocar(S.sel, n); S.sel = null; }
@@ -364,34 +413,46 @@ document.addEventListener('change', e => {
   else if (t.id === 'gCafe') { c.gCafe = Math.max(0, +t.value||0); render(); }
   else if (t.id === 'tipo') { atualizar(true); }
   else if (t.id === 'data') { tipoPelaData(); atualizar(true); }
-  else if (t.id === 'minDur' || t.id === 'faxQtd') { atualizar(false); }
+  else if (t.id === 'minDur') { atualizar(false); }
+  else if (t.id === 'grad') { cur().grad = t.value.trim(); atualizar(true); }
+  else if (t.dataset.hi !== undefined || t.dataset.hf !== undefined) {
+    const ti = +(t.dataset.hi ?? t.dataset.hf), tp = tipo(), T = turnos()[ti], v = paraMin(t.value || '00:00');
+    let a = T.a, b = T.b;
+    if (t.dataset.hi !== undefined) { a = v; if (T.madr && a < 12*60) a += 1440; } else b = v;
+    while (b <= a) b += 1440; while (b - a > 1440) b -= 1440;
+    S.hor[tp] = S.hor[tp] || {}; S.hor[tp][ti] = {a, b}; salvarPref(); $('imgBox').innerHTML = ''; atualizar(false);
+  }
+  else if (t.id === 'arqPdf' && t.files[0]) importarPdf(t.files[0]);
   else if (t.id === 'rodar') render();
 });
 let tmr; $('nomes').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(() => { cur().nomes = $('nomes').value; atualizar(true); }, 300); });
-$('faxina').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(() => { cur().faxina = $('faxina').value; salvarPref(); render(); }, 300); });
+document.addEventListener('input', e => { const t = e.target;
+  if (t.dataset.fl !== undefined) { cur().fax[+t.dataset.fl].l = t.value; clearTimeout(tmr); tmr = setTimeout(() => { salvarPref(); render(); }, 400); }
+  else if (t.id === 'grad') { cur().grad = t.value.trim(); }
+});
 $('tab-CFP').onclick = () => trocarCurso('CFP');
 $('tab-CFO').onclick = () => trocarCurso('CFO');
 $('embaralhar').onclick = () => atualizar(true);
 $('gerar').onclick = gerarImagem;
 
-function salvarPref(){ try { localStorage.setItem('escala-faxina', JSON.stringify({CFP:S.C.CFP.faxina, CFO:S.C.CFO.faxina})); } catch(e){} }
-function lerPref(){ try { const p = JSON.parse(localStorage.getItem('escala-faxina')||'{}'); for (const k of ['CFP','CFO']) if (p[k]) S.C[k].faxina = p[k]; } catch(e){} }
+function salvarPref(){ try { localStorage.setItem('escala-pref2', JSON.stringify({fax:{CFP:S.C.CFP.fax, CFO:S.C.CFO.fax}, hor:S.hor})); } catch(e){} }
+function lerPref(){ try { const p = JSON.parse(localStorage.getItem('escala-pref2')||'{}');
+  if (p.fax) for (const k of ['CFP','CFO']) if (Array.isArray(p.fax[k])) S.C[k].fax = p.fax[k];
+  if (p.hor) S.hor = p.hor; } catch(e){} }
 
 // ---------- Imagem para WhatsApp ----------
-function gerarImagem(){
-  const c = cur(), pl = c.plano; if (!pl) return;
-  const R = S.R, fax = S.fax;
+function desenhar(sub, tabs, guarita, fax){
+  const pl = cur().plano;
   const W = 1080, pad = 40, colH = 190, rowH = 54, cv = document.createElement('canvas'), x = cv.getContext('2d');
-  const tabs = R.turnos.filter(T => T.postos.length);
   let H = 190;
   tabs.forEach(T => H += 60 + rowH * (1 + T.slots.length) + 20);
-  if (pl.guarita.length) H += 60 + rowH * (pl.guarita.length + 1) + 20;
+  if (guarita.length) H += 60 + rowH * (guarita.length + 1) + 20;
   if (fax.length) H += 60 + rowH * (fax.length + 1) + 20;
   H += 40;
   cv.width = W; cv.height = H;
   x.fillStyle = '#ffffff'; x.fillRect(0,0,W,H);
   x.fillStyle = '#b3261e'; x.fillRect(0,0,W,150);
-  x.fillStyle = '#ffffff'; x.font = 'bold 46px system-ui,sans-serif'; x.fillText('ESCALA DE POSTOS · ' + S.curso, pad, 72);
+  x.fillStyle = '#ffffff'; x.font = 'bold 46px system-ui,sans-serif'; x.fillText(sub + ' · ' + S.curso, pad, 72);
   const d = $('data').value ? new Date($('data').value+'T12:00') : null;
   x.font = '30px system-ui,sans-serif';
   x.fillText((d ? `${d.toLocaleDateString('pt-BR')} · ${DIAS[d.getDay()]}` : '') + (pl.cmt && pl.cmt.length ? `  ·  Cmt: ${pl.cmt.join(', ')}` : ''), pad, 118);
@@ -422,17 +483,63 @@ function gerarImagem(){
     linhas.forEach(l => { l.forEach((v, i) => cell(v, pad + i*w, y, w, '#ffffff', '#1d2329')); y += rowH; });
     y += 20;
   };
-  if (pl.guarita.length) tabela('GUARITA', ['05h30 – 06h30'], pl.guarita.map(n => [n]));
+  if (guarita.length) tabela('GUARITA', ['05h30 – 06h30'], guarita.map(n => [n]));
   if (fax.length) tabela('FAXINA E MISSÕES', ['Local / missão', 'Militar(es)'], fax.map(f => [f.local, f.quem.join(', ')]));
-  cv.toBlob(async blob => {
-    const nome = `escala-${S.curso}-${$('data').value || 'dia'}.png`, file = new File([blob], nome, {type:'image/png'}), url = URL.createObjectURL(blob);
-    $('imgBox').innerHTML = `<img id="img" src="${url}" alt="Escala ${S.curso}"><div class="row" style="margin-top:8px"><button class="pri" id="compart">📤 Compartilhar</button><a download="${nome}" href="${url}"><button>⬇ Baixar</button></a></div>`;
-    $('compart').onclick = async () => {
-      if (navigator.canShare && navigator.canShare({files:[file]})) { try { await navigator.share({files:[file], title:'Escala ' + S.curso}); } catch(e){} }
-      else alert('Compartilhamento não suportado aqui. Use "Baixar" e envie pelo WhatsApp.');
-    };
-    $('img').scrollIntoView({behavior:'smooth'});
-  }, 'image/png');
+  return cv;
+}
+// Gera: uma imagem por turno (guarita junto do último turno), uma da faxina e a completa.
+async function gerarImagem(){
+  const pl = cur().plano; if (!pl) return;
+  const tabs = S.R.turnos.filter(T => T.postos.length), fax = S.fax, G = pl.guarita;
+  const lista = [];
+  tabs.forEach((T, i) => lista.push({nome: T.t.nome, cv: desenhar('ESCALA ' + T.t.nome.toUpperCase(), [T], i === tabs.length - 1 ? G : [], [])}));
+  if (!tabs.length && G.length) lista.push({nome: 'Guarita', cv: desenhar('GUARITA', [], G, [])});
+  if (fax.length) lista.push({nome: 'Faxina', cv: desenhar('FAXINA', [], [], fax)});
+  lista.push({nome: 'Completa', cv: desenhar('ESCALA DE POSTOS', tabs, G, fax)});
+  const dt = $('data').value || 'dia', sl = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  S.imgs = await Promise.all(lista.map(it => new Promise(ok => it.cv.toBlob(b => ok({nome: it.nome,
+    file: new File([b], `escala-${S.curso}-${dt}-${sl(it.nome)}.png`, {type:'image/png'}), url: URL.createObjectURL(b)}), 'image/png'))));
+  $('imgBox').innerHTML = `<div class="row" style="margin-top:12px"><button class="pri" id="shAll">📤 Compartilhar todas</button></div><div class="imgs">` +
+    S.imgs.map((im, i) => `<div><b>${esc(im.nome)}</b><img src="${im.url}" alt="${esc(im.nome)}">
+      <div class="row" style="margin-top:6px"><button data-sh="${i}">📤 Compartilhar</button><button data-dl="${i}">⬇ Baixar</button></div></div>`).join('') + '</div>';
+  $('imgBox').scrollIntoView({behavior:'smooth'});
+}
+function baixar(i){ const im = S.imgs[i], a = document.createElement('a'); a.href = im.url; a.download = im.file.name; document.body.appendChild(a); a.click(); a.remove(); }
+async function compartilhar(idx){
+  const files = idx.map(i => S.imgs[i].file);
+  if (navigator.canShare && navigator.canShare({files})) { try { await navigator.share({files, title:'Escala ' + S.curso}); } catch(e){} }
+  else if (idx.length === 1) baixar(idx[0]);
+  else alert('Compartilhamento não suportado aqui. Use "Baixar" em cada imagem.');
+}
+
+// ---------- Importar PDF (nome de guerra em negrito) ----------
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+function carregarPdfJs(){
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((ok, erro) => { const sc = document.createElement('script'); sc.src = PDFJS + 'pdf.min.js';
+    sc.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; ok(pdfjsLib); }; sc.onerror = erro; document.head.appendChild(sc); });
+}
+async function importarPdf(arq){
+  const btn = $('btnPdf'), txt0 = btn.textContent; btn.textContent = 'Lendo PDF…'; btn.disabled = true;
+  try {
+    const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise, nomes = [];
+    for (let pg = 1; pg <= doc.numPages; pg++) {
+      const page = await doc.getPage(pg); await page.getOperatorList(); // carrega as fontes
+      const tc = await page.getTextContent(), linhas = {};
+      const negrito = fn => { try { const f = page.commonObjs.get(fn); return !!(f && (f.bold || /bold|black|heavy|semibold|demi/i.test(f.name || ''))); } catch(e) { return false; } };
+      tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3;
+        (linhas[y] = linhas[y] || []).push({x: it.transform[4], s: it.str, b: negrito(it.fontName)}); });
+      Object.keys(linhas).map(Number).sort((a,b) => b - a).forEach(y => {
+        const its = linhas[y].sort((a,b) => a.x - b.x), tudo = its.map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        const ng = its.filter(i => i.b).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        if (!ng || ng === tudo) return; // sem negrito, ou linha inteira em negrito (título)
+        nomes.push(((achaGrad(tudo) || cur().grad) + ' ' + ng.toUpperCase()).trim());
+      });
+    }
+    if (!nomes.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
+    $('nomes').value = nomes.join('\n'); cur().nomes = $('nomes').value; atualizar(true);
+  } catch(e) { alert('Não consegui ler o PDF: ' + e.message); }
+  finally { btn.textContent = txt0; btn.disabled = false; $('arqPdf').value = ''; }
 }
 
 // ---------- Início ----------
