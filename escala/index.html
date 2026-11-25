@@ -564,36 +564,46 @@ async function importarPdf(arq){
   const btn = $('btnPdf'), txt0 = btn.textContent; btn.textContent = 'Lendo PDF…'; btn.disabled = true;
   try {
     const lib = await carregarPdfJs(), doc = await lib.getDocument({data: await arq.arrayBuffer()}).promise;
-    const out = {CFP: [], CFO: []}, cmt = [], semCurso = [], sob = [], plant = new Set(), femPdf = []; let data = '';
+    // o boletim pode trazer vários dias: separa os militares pela "Data:" mais recente acima deles
+    const dias = {}, dia = d => dias[d] = dias[d] || {CFP: [], CFO: [], cmt: [], sob: [], plant: new Set(), fem: []};
+    let atual = '';
     for (let pg = 1; pg <= doc.numPages; pg++) {
       const page = await doc.getPage(pg); await page.getOperatorList(); // carrega as fontes
-      const tc = await page.getTextContent(), linhas = {};
+      const tc = await page.getTextContent();
       const negrito = fn => { try { const f = page.commonObjs.get(fn); return !!(f && (f.bold || /bold|black|heavy|semibold|demi/i.test(f.name || ''))); } catch(e) { return false; } };
-      tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3;
-        (linhas[y] = linhas[y] || []).push({x: it.transform[4], s: it.str, b: negrito(it.fontName)}); });
-      Object.keys(linhas).map(Number).sort((a,b) => b - a).forEach(y => {
-        const its = linhas[y].sort((a,b) => a.x - b.x), junta = a => a.map(i => i.s).join(' ').replace(/\s+/g, ' ').trim(), tudo = junta(its);
-        if (!data) data = lerData(tudo);
+      // agrupa os textos na mesma linha (tolerância de 6 pontos: o nome às vezes fica um pouco desalinhado da graduação)
+      const grupos = [];
+      tc.items.filter(it => it.str.trim()).map(it => ({x: it.transform[4], y: it.transform[5], s: it.str, b: negrito(it.fontName)}))
+        .sort((a,b) => b.y - a.y).forEach(it => { const g = grupos.find(g => Math.abs(g.y - it.y) <= 6); if (g) g.i.push(it); else grupos.push({y: it.y, i: [it]}); });
+      grupos.forEach(g => {
+        const its = g.i.sort((a,b) => a.x - b.x), junta = a => a.map(i => i.s).join(' ').replace(/\s+/g, ' ').trim(), tudo = junta(its);
+        const dt = lerData(tudo); if (dt) { atual = dt; return; }
         // coluna GRAD: o negrito à direita dela é o nome de guerra; à esquerda fica a função
-        const iG = its.findIndex(i => achaGrad(i.s));
-        let ng, funcao = '', grad;
-        if (iG >= 0) { grad = achaGrad(its[iG].s); ng = junta(its.slice(iG + 1).filter(i => i.b)); funcao = junta(its.slice(0, iG)); }
-        else { ng = junta(its.filter(i => i.b)); grad = achaGrad(tudo); if (ng === tudo) return; }
-        if (!ng) return;
-        const curso = grad === 'Cad' || grad === 'Al Of' ? 'CFO' : grad ? 'CFP' : '';
-        const ef = acharMilitar(tudo);
-        const nome = ef ? nomeEscala(ef) : ((grad || cur().grad) + ' ' + ng.toUpperCase()).trim();
-        if (ef && ef.f) femPdf.push(nome);
-        const alvo = out[curso || S.curso];
-        if (!alvo.includes(nome)) alvo.push(nome);
-        if (/sobreaviso/i.test(funcao)) sob.push(nome); else plant.add(nome);
-        if (/cmt|comandante/i.test(funcao)) cmt.push(nome);
-        if (!curso) semCurso.push(nome);
+        const iG = its.findIndex(i => /aluno\s+soldado|aluno\s+oficial|\bcad\b\.?/i.test(i.s));
+        if (iG < 0) return;
+        const grad = achaGrad(its[iG].s), ng = junta(its.slice(iG + 1).filter(i => i.b)), funcao = junta(its.slice(0, iG));
+        const ef = acharMilitar(junta(its.slice(iG + 1)));
+        if (!ng && !ef) return;
+        const curso = ef ? ef.c : (grad === 'Cad' || grad === 'Al Of' ? 'CFO' : 'CFP');
+        const nome = ef ? nomeEscala(ef) : (grad + ' ' + ng.toUpperCase()).trim(), D = dia(atual);
+        if (ef && ef.f) D.fem.push(nome);
+        if (!D[curso].includes(nome)) D[curso].push(nome);
+        if (/sobreaviso/i.test(funcao)) D.sob.push(nome); else D.plant.add(nome);
+        if (/cmt|comandante/i.test(funcao)) D.cmt.push(nome);
       });
     }
-    if (!out.CFP.length && !out.CFO.length) { alert('Não encontrei nomes em negrito neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
-    preencher({data, CFP: out.CFP, CFO: out.CFO, cmt, fem: femPdf, sob: sob.filter(n => !plant.has(n))});
-    alert(`Importados: ${out.CFP.length} do CFP e ${out.CFO.length} do CFO. Sobreavisos marcados (Sobr.) ficam fora até você ativar. Confira as listas nas abas CFP e CFO.`);
+    const datas = Object.keys(dias).filter(d => dias[d].CFP.length || dias[d].CFO.length);
+    if (!datas.length) { alert('Não encontrei a escala de alunos neste PDF. Cole a lista no campo ou mande o arquivo para o Claude.'); return; }
+    let d = datas[0];
+    if (datas.length > 1) {
+      const fmt = x => x ? `${x.slice(8,10)}/${x.slice(5,7)} (${DIAS[new Date(x + 'T12:00').getDay()]})` : 'sem data';
+      const r = prompt('Este PDF tem escala de vários dias. Digite o número do dia:\n' + datas.map((x, i) => `${i + 1}) ${fmt(x)} — ${dias[x].CFP.length} CFP, ${dias[x].CFO.length} CFO`).join('\n'), '1');
+      if (r === null) return;
+      d = datas[Math.max(0, Math.min(datas.length - 1, (parseInt(r, 10) || 1) - 1))];
+    }
+    const D = dias[d];
+    preencher({data: d, CFP: D.CFP, CFO: D.CFO, cmt: D.cmt, fem: D.fem, sob: D.sob.filter(n => !D.plant.has(n))});
+    alert(`Importados: ${D.CFP.length} do CFP e ${D.CFO.length} do CFO. Sobreavisos marcados (Sobr.) ficam fora até você ativar. Confira as listas nas abas CFP e CFO.`);
   } catch(e) { alert('Não consegui ler o PDF: ' + e.message); }
   finally { btn.textContent = txt0; btn.disabled = false; $('arqPdf').value = ''; }
 }
