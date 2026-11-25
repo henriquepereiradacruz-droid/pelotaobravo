@@ -62,6 +62,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 .hr input{width:auto;flex:0 1 120px;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit}
 .imgs{display:flex;flex-direction:column;gap:14px;margin-top:10px}
 .imgs img{max-width:100%;border-radius:8px;border:1px solid var(--line)}
+.ef{border:1px dashed var(--line);border-radius:8px;padding:10px;margin-bottom:10px;font-size:14px}
 .sticky{position:sticky;bottom:0;background:linear-gradient(transparent,var(--card) 30%);padding-top:20px}
 </style>
 </head>
@@ -84,6 +85,11 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
 
 <div class="card">
   <h2>Militares escalados (<span id="qtd">0</span>)</h2>
+  <div class="ef">
+    <div><b>Efetivo:</b> <span id="efN"></span></div>
+    <div class="row" style="margin-top:6px"><button id="btnEf">📂 Carregar efetivo</button><button id="apagaEf" style="flex:0 1 auto">Apagar</button></div>
+    <input type="file" id="arqEf" hidden>
+  </div>
   <div class="row" style="margin-bottom:8px">
     <button id="btnFoto">📷 Ler foto da escala</button>
     <button id="btnPdf">📄 Importar PDF</button>
@@ -93,11 +99,6 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px;margin:6px 0}
   <textarea id="nomes" placeholder="Cole ou digite um nome por linha.&#10;Dica: *SILVA* ou **SILVA** marca o nome de guerra."></textarea>
   <div class="row"><div><label for="grad">Graduação padrão (quando a lista não traz)</label><input id="grad" style="width:100%;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit"></div></div>
   <p class="mut">Marque as <b>militares femininas</b> (faxina nos banheiros femininos), quem está de <b>aula externa</b> (não pega o 1º horário) e, se quiser escolher, quem faz <b>guarita</b>.</p>
-  <details style="margin:4px 0 8px"><summary>Efetivo: <span id="efN"></span></summary>
-    <p class="mut">Lista com nome completo e nome de guerra de todos os militares. Fica salva só neste celular e é usada para reconhecer os nomes da foto.</p>
-    <div class="row"><button id="btnEf">📂 Carregar arquivo do efetivo</button><button id="apagaEf">Apagar</button></div>
-    <input type="file" id="arqEf" accept=".json,application/json,text/plain" hidden>
-  </details>
   <div id="sobBox"></div>
   <div id="pessoas" class="pessoas"></div>
 </div>
