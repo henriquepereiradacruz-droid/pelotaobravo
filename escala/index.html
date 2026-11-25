@@ -456,7 +456,9 @@ function desenhar(sub, tabs, guarita, fax){
   const pl = cur().plano;
   const W = 1080, pad = 40, colH = 190, rowH = 54, cv = document.createElement('canvas'), x = cv.getContext('2d');
   let H = 190;
-  tabs.forEach(T => H += 60 + rowH * (1 + T.slots.length) + 20);
+  // o que tiver mais itens (horários ou postos) vai nas linhas, para a imagem ficar o mais vertical possível
+  const deitar = T => T.slots.length < T.postos.length;
+  tabs.forEach(T => H += 60 + rowH * (1 + Math.max(T.slots.length, T.postos.length)) + 20);
   if (guarita.length) H += 60 + rowH * (guarita.length + 1) + 20;
   if (fax.length) H += 60 + rowH * (fax.length + 1) + 20;
   H += 40;
@@ -477,6 +479,18 @@ function desenhar(sub, tabs, guarita, fax){
   const titulo = t => { x.fillStyle = '#b3261e'; x.font = 'bold 32px system-ui,sans-serif'; x.fillText(t, pad, y + 40); y += 60; };
   tabs.forEach(T => {
     titulo(`${T.t.nome.toUpperCase()}  ${hm(T.t.a)} – ${hm(T.t.b)}`);
+    if (deitar(T)) { // linhas = postos, colunas = horários
+      const c0 = 240, cw = (W - pad*2 - c0) / T.slots.length;
+      cell('Posto', pad, y, c0, '#263238', '#ffffff', true);
+      T.slots.forEach((s, i) => cell(`${hm(s.ini)}–${hm(s.fim)}`, pad + c0 + i*cw, y, cw, '#fbeceb', '#b3261e', true));
+      y += rowH;
+      T.postos.forEach((p, r) => {
+        cell(p, pad, y, c0, '#263238', '#ffffff', true);
+        T.slots.forEach((s, i) => cell(s.linha[r] || '—', pad + c0 + i*cw, y, cw, r%2?'#f4f5f7':'#ffffff', '#1d2329'));
+        y += rowH;
+      });
+      y += 20; return;
+    }
     const colW = (W - pad*2 - colH) / T.postos.length;
     cell('Horário', pad, y, colH, '#263238', '#ffffff', true);
     T.postos.forEach((p, i) => cell(p, pad + colH + i*colW, y, colW, '#263238', '#ffffff', true));
