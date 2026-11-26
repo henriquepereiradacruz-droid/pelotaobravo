@@ -29,17 +29,19 @@
 }}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--txt);font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif;
-  -webkit-font-smoothing:antialiased;letter-spacing:-.2px}
+  -webkit-font-smoothing:antialiased;letter-spacing:0}
 main{max-width:720px;margin:0 auto;padding:0 16px calc(110px + env(safe-area-inset-bottom))}
 /* barra de navegação com título grande que encolhe ao rolar */
-#nav{position:sticky;top:0;z-index:5;margin:0 -16px;padding:env(safe-area-inset-top) 16px 0;transition:background .3s,border-color .3s;border-bottom:.5px solid transparent}
-#nav.rolou{background:var(--bar);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px);border-bottom-color:var(--line)}
+#nav{position:sticky;top:0;z-index:5;margin:0 -16px;padding:env(safe-area-inset-top) 16px 0;transition:background .3s}
+#nav.rolou{background:var(--bar);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px)}
+#nav::after{content:"";position:absolute;left:0;right:0;top:100%;height:14px;pointer-events:none;background:linear-gradient(var(--bar),transparent);opacity:0;transition:opacity .3s}
+#nav.rolou::after{opacity:1}
 .barra{height:44px;display:flex;align-items:center;justify-content:space-between}
 .barra .tit{font-weight:600;font-size:17px;opacity:0;transform:translateY(6px);transition:opacity .25s,transform .35s var(--mola)}
 #nav.rolou .barra .tit{opacity:1;transform:none}
 .link{background:none!important;border:0!important;box-shadow:none!important;color:var(--acc)!important;font-size:17px;padding:8px 0!important}
 .grande{display:flex;align-items:center;justify-content:space-between;padding:2px 0 8px;transition:opacity .2s}
-h1{font-size:34px;line-height:41px;font-weight:700;letter-spacing:.37px;margin:0}
+h1{font-size:34px;line-height:1.1;font-weight:700;letter-spacing:-.02em;margin:0;font-optical-sizing:auto}
 .logo{width:40px;height:40px;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 /* seções agrupadas: título pequeno em cima, conteúdo em bloco arredondado */
 .card{background:var(--card);border-radius:12px;padding:14px 16px;margin:38px 0 0;position:relative}
@@ -47,7 +49,7 @@ h1{font-size:34px;line-height:41px;font-weight:700;letter-spacing:.37px;margin:0
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .entra{animation:subir .55s var(--mola) both}
 @keyframes subir{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-label{display:block;font-size:13px;color:var(--mut);margin:10px 0 6px}
+label{display:block;font-size:13px;letter-spacing:.01em;color:var(--mut);margin:10px 0 6px}
 input[type=date],input[type=number],input[type=time],select,textarea,.fx input,.hr input,#grad{width:100%;background:var(--fill);color:var(--txt);border:0;
   border-radius:10px;padding:11px 12px;font:inherit;font-size:17px;color-scheme:light dark;-webkit-appearance:none;appearance:none}
 select{background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);
@@ -57,14 +59,17 @@ textarea{min-height:140px;resize:vertical}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .row>*{flex:1 1 140px}
 /* controle segmentado */
-.tabs{display:flex;padding:2px;border-radius:9px;background:var(--fill);position:relative}
+.tabs{display:flex;padding:2px;border-radius:9px;background:var(--fill);position:relative;isolation:isolate}
+.tabs::before{content:"";position:absolute;z-index:-1;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:7px;background:var(--seg);
+  box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .35s var(--mola)}
+.tabs.cfo::before{transform:translateX(100%)}
 .tabs button{flex:1;border:0!important;background:transparent!important;color:var(--txt)!important;font-weight:500!important;font-size:15px;padding:7px 0;border-radius:7px;box-shadow:none!important;
   transition:background .3s var(--mola),box-shadow .3s}
-.tabs button.on{background:var(--seg)!important;font-weight:600!important;box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04)!important}
+.tabs button.on{font-weight:600!important}
 /* botões iOS: cinza preenchido, vermelho preenchido no principal; toque = afunda com mola */
 button{background:var(--fill);color:var(--acc);border:0;border-radius:10px;padding:11px 14px;font:inherit;font-size:16px;font-weight:500;cursor:pointer;
   transition:transform .4s var(--mola),opacity .2s,background .25s}
-button:active{transform:scale(.96);opacity:.7;transition-duration:.08s}
+button:active{transform:scale(.97);transition:transform 100ms ease-out}
 button:disabled{opacity:.5}
 button.pri,button.on{background:var(--acc);color:var(--acc-tx);font-weight:600}
 #gerar{font-size:17px;padding:15px;border-radius:14px}
@@ -109,14 +114,30 @@ details[open] summary::after{transform:rotate(90deg)}
 .hr{display:flex;gap:8px;align-items:center;margin:6px 0;color:var(--mut)}
 .hr input{width:auto;flex:0 1 120px;padding:7px 10px;text-align:center}
 .imgs{display:flex;flex-direction:column;gap:18px;margin-top:12px}
-.imgs>div{animation:subir .5s var(--mola) both}
+.imgs>div{animation:materializar .6s var(--mola) both}
+@keyframes materializar{from{opacity:0;filter:blur(12px);transform:scale(.96)}to{opacity:1;filter:none;transform:none}}
 .imgs img{max-width:100%;border-radius:12px;margin-top:6px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .ef{border-radius:10px;padding:12px;margin-bottom:12px;font-size:15px;background:var(--card2)}
 /* barra inferior com desfoque, como nos apps da Apple */
 .sticky{position:sticky;bottom:0;z-index:4;margin:8px -16px -14px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-radius:0 0 12px 12px;
-  background:var(--bar);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px);border-top:.5px solid var(--line)}
+  background:var(--bar);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px);box-shadow:inset 0 .5px 0 rgba(255,255,255,.35),0 -10px 20px -14px rgba(0,0,0,.25)}
 .quieto tr,.quieto .pessoa{animation:none!important}
-@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+#escuro{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.4);opacity:0;pointer-events:none}
+#escuro.on{pointer-events:auto}
+#folha{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:560px;margin:0 auto;padding:8px 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius:14px 14px 0 0;background:var(--bar);-webkit-backdrop-filter:saturate(1.8) blur(30px);backdrop-filter:saturate(1.8) blur(30px);
+  box-shadow:0 -1px 0 rgba(255,255,255,.25) inset,0 -12px 40px rgba(0,0,0,.25);transform:translateY(110%);touch-action:none;visibility:hidden}
+#folha .alca{width:36px;height:5px;border-radius:3px;background:var(--mut);opacity:.5;margin:0 auto 14px}
+#folha h3{margin:0 0 6px;font-size:20px;letter-spacing:-.01em}
+#folha p{margin:0 0 18px;color:var(--mut);font-size:15px;line-height:1.4}
+#folha button{width:100%;margin-top:10px;font-size:17px;padding:14px}
+#folha .perigo{background:var(--acc);color:#fff;font-weight:600}
+@keyframes esmaecer{from{opacity:0}}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-name:esmaecer!important;animation-duration:.2s!important;animation-iteration-count:1!important;transition-property:opacity,background-color,color!important;transition-duration:.2s!important}
+  .tabs::before{transition:none}}
+@media (prefers-reduced-transparency: reduce){#nav.rolou,.sticky,#folha{background:var(--card-solid);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media (prefers-contrast: more){.card,.tbl,#folha{border:1px solid var(--txt)}.mut,label{color:var(--txt)}}
 </style>
 </head>
 <body>
@@ -188,6 +209,14 @@ details[open] summary::after{transform:rotate(90deg)}
   <div id="imgBox"></div>
 </div>
 </main>
+<div id="escuro"></div>
+<div id="folha" role="dialog" aria-modal="true" aria-labelledby="folhaTit">
+  <div class="alca"></div>
+  <h3 id="folhaTit">Começar um novo serviço?</h3>
+  <p>Os nomes e as marcações do CFP e do CFO serão apagados. O efetivo e os locais de faxina continuam salvos.</p>
+  <button class="perigo" id="folhaOk">Apagar e começar</button>
+  <button id="folhaNao">Cancelar</button>
+</div>
 
 <script>
 "use strict";
@@ -418,6 +447,7 @@ function cfgTurnos(nomes){
 }
 function atualizar(regerar){
   const c = cur(), todos = lerNomes(c.nomes), nomes = todos.filter(n => !c.cmt.has(n) && (c.usaSob || !c.sob.has(n)));
+  $('tab-CFO').parentNode.classList.toggle('cfo', S.curso === 'CFO');
   $('qtd').textContent = todos.length + (todos.length !== nomes.length ? ` · ${nomes.length} na escala` : '');
   const nSob = todos.filter(n => c.sob.has(n)).length;
   $('sobBox').innerHTML = `<label class="chk"><input type="checkbox" id="usaSob" ${c.usaSob?'checked':''}><span>Incluir sobreavisos na escala${nSob ? ` (${nSob})` : ''}</span></label>`;
@@ -444,8 +474,8 @@ function renderFax(){
     <button data-fq="${i}|-1">−</button><b>${f.q}</b><button data-fq="${i}|1">＋</button><button data-fd="${i}" title="Remover">✕</button></div>`).join('');
 }
 // Zera o dia: nomes, marcações, postos e horários dos turnos. Mantém o efetivo e os locais de faxina.
-function novoServico(){
-  if (!confirm('Começar um novo serviço? Os nomes e marcações do CFP e do CFO serão apagados. O efetivo e os locais de faxina continuam salvos.')) return;
+function novoServico(){ Folha.abrir(); }
+function zerarServico(){
   for (const k of ['CFP','CFO']) { const n = novoCurso(k); n.fax = S.C[k].fax; S.C[k] = n; }
   S.hor = {}; S.sel = null; salvarPref();
   const hoje = new Date(); $('data').value = new Date(hoje - hoje.getTimezoneOffset()*6e4).toISOString().slice(0,10); tipoPelaData();
@@ -495,7 +525,7 @@ document.addEventListener('click', e => {
   else if (t.id === 'apagaEf') { if (confirm('Apagar o efetivo salvo neste celular?')) { EFETIVO = []; _idx = null; salvarEfetivo(); mostrarEfetivo(); } }
   else if (t.dataset.n) {
     const n = d(t.dataset.n);
-    if (!S.sel) S.sel = n; else if (S.sel === n) S.sel = null; else { trocar(S.sel, n); S.sel = null; }
+    if (!S.sel) S.sel = n; else if (S.sel === n) S.sel = null; else { trocar(S.sel, n); S.sel = null; vibrar(10); }
     $('imgBox').innerHTML = ''; render();
   }
 });
@@ -619,7 +649,7 @@ async function gerarImagem(){
   $('imgBox').innerHTML = `<div class="row" style="margin-top:12px"><button class="pri" id="shAll">Compartilhar todas</button></div><div class="imgs">` +
     S.imgs.map((im, i) => `<div><b>${esc(im.nome)}</b><img src="${im.url}" alt="${esc(im.nome)}">
       <div class="row" style="margin-top:6px"><button data-sh="${i}">Compartilhar</button><button data-dl="${i}">Baixar</button></div></div>`).join('') + '</div>';
-  $('imgBox').scrollIntoView({behavior:'smooth'});
+  vibrar(12); $('imgBox').scrollIntoView({behavior:'smooth'});
 }
 function baixar(i){ const im = S.imgs[i], a = document.createElement('a'); a.href = im.url; a.download = im.file.name; document.body.appendChild(a); a.click(); a.remove(); }
 async function compartilhar(idx){
@@ -846,7 +876,9 @@ const escuro = () => matchMedia('(prefers-color-scheme: dark)').matches;
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('entra'); io.unobserve(e.target); } }), {threshold: 0.05});
   document.querySelectorAll('.card').forEach(c => io.observe(c)); })();
 // toque leve (vibração curta) nos botões, quando o celular permite
-document.addEventListener('click', e => { if (e.target.closest('button') && navigator.vibrate) try { navigator.vibrate(8); } catch(_){} });
+const vibrar = (ms = 10) => { if (navigator.vibrate) try { navigator.vibrate(ms); } catch(_){} };
+// no iPhone o :active só responde no toque se existir um ouvinte de toque (resposta imediata, §1)
+document.addEventListener('touchstart', () => {}, {passive: true});
 // (só anima quando a estrutura muda; trocar um nome ou marcar um botão não faz tudo piscar de novo)
 let sigRes = '', sigPes = '';
 new MutationObserver(() => { const ts = [...document.querySelectorAll('#resultado .tbl')], sig = ts.map(t => t.rows.length).join(',');
@@ -855,6 +887,70 @@ new MutationObserver(() => { const ts = [...document.querySelectorAll('#resultad
 new MutationObserver(() => { const ps = [...$('pessoas').children], sig = ps.map(p => p.firstElementChild && p.firstElementChild.textContent).join('|');
   $('pessoas').classList.toggle('quieto', sig === sigPes); sigPes = sig;
   ps.forEach((p, i) => p.style.setProperty('--i', Math.min(i, 30))); }).observe($('pessoas'), {childList: true});
+
+// ---------- Mola e folha inferior (skill apple-design: §3–§6, §9, §12) ----------
+// Mola com os dois parâmetros da Apple: amortecimento (1 = sem quicar) e resposta (s).
+// Sempre parte do valor ATUAL e da velocidade atual, então pode ser interrompida a qualquer momento.
+function mola(de, para, {v = 0, amort = 1, resp = 0.35, aoMudar, fim} = {}){
+  const k = Math.pow(2 * Math.PI / resp, 2), c = 4 * Math.PI * amort / resp;
+  let x = de, vel = v, ult = performance.now(), vivo = true;
+  (function passo(t){
+    if (!vivo) return;
+    let dt = Math.min(0.064, (t - ult) / 1000); ult = t;
+    while (dt > 0) { const h = Math.min(dt, 1/240); vel += (-k * (x - para) - c * vel) * h; x += vel * h; dt -= h; }
+    if (Math.abs(x - para) < 0.3 && Math.abs(vel) < 8) { x = para; aoMudar(x); vivo = false; fim && fim(); return; }
+    aoMudar(x); requestAnimationFrame(passo);
+  })(ult);
+  return {parar(){ vivo = false; }, get valor(){ return x; }, get vel(){ return vel; }};
+}
+// projeção do impulso, igual à desaceleração da rolagem do iPhone (§6)
+const projetar = (v, d = 0.998) => (v / 1000) * d / (1 - d);
+// borracha: quanto mais passa do limite, menos acompanha (§9)
+const borracha = (passou, dim, c = 0.55) => (passou * dim * c) / (dim + c * Math.abs(passou));
+
+const Folha = (() => {
+  const f = $('folha'), esc = $('escuro'); let y = 0, anim = null, aberta = false;
+  const altura = () => f.getBoundingClientRect().height;
+  const pinta = v => { y = v; const h = altura(); f.style.transform = `translateY(${v}px)`; esc.style.opacity = Math.max(0, Math.min(1, 1 - v / h)); };
+  const ir = (alvo, v = 0, amort = 1, fim) => { anim && anim.parar(); anim = mola(y, alvo, {v, amort, resp: 0.3, aoMudar: pinta, fim}); };
+  function abrir(){
+    aberta = true; f.style.visibility = 'visible'; esc.classList.add('on');
+    if (!anim) pinta(altura() + 20);
+    if (semMov) { pinta(0); return; }
+    ir(0, 0, 1); setTimeout(() => $('folhaNao').focus({preventScroll: true}), 50);
+  }
+  function fechar(v = 0){
+    aberta = false; esc.classList.remove('on');
+    const fim = () => { f.style.visibility = 'hidden'; anim = null; };
+    if (semMov) { pinta(altura() + 20); fim(); return; }
+    ir(altura() + 20, v, 1, fim);                    // sai pelo mesmo caminho por onde entrou (§7)
+  }
+  // arrastar 1:1 a partir de onde pegou; velocidade no soltar decide fechar ou voltar
+  let pegou = null, hist = [];
+  f.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    anim && anim.parar();                             // pega no meio do movimento, sem salto (§3)
+    pegou = {y0: e.clientY, base: y}; hist = [{y: y, t: e.timeStamp}]; f.setPointerCapture(e.pointerId);
+  });
+  f.addEventListener('pointermove', e => {
+    if (!pegou) return;
+    let v = pegou.base + (e.clientY - pegou.y0);
+    if (v < 0) v = borracha(v, altura());             // para cima resiste, não trava
+    pinta(v); hist.push({y: v, t: e.timeStamp}); if (hist.length > 6) hist.shift();
+  });
+  const soltar = e => {
+    if (!pegou) return; pegou = null;
+    const a = hist[0], b = hist[hist.length - 1], vel = b.t > a.t ? (b.y - a.y) / ((b.t - a.t) / 1000) : 0;
+    const destino = y + projetar(vel);                // para onde o gesto ia (§6)
+    if (destino > altura() * 0.5) fechar(vel); else ir(0, vel, 0.8);   // passa a velocidade do dedo para a mola (§5)
+  };
+  f.addEventListener('pointerup', soltar); f.addEventListener('pointercancel', soltar);
+  esc.addEventListener('click', () => fechar());
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && aberta) fechar(); });
+  $('folhaNao').addEventListener('click', () => fechar());
+  $('folhaOk').addEventListener('click', () => { vibrar(15); fechar(); zerarServico(); });
+  return {abrir, fechar};
+})();
 
 // ---------- Início ----------
 (function(){
